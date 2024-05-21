@@ -1,0 +1,7 @@
+nonebot-adapter-onebot
+nonebot-adapter-discord
+nonebot-adapter-telegram
+nonebot-plugin-apscheduler
+httpx
+ping3
+yaml

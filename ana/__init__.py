@@ -22,7 +22,6 @@ __plugin_meta__ = PluginMetadata(
 config = get_plugin_config(Config)
 images = {}
 image_cats = []
-kk_accounts = []
 def update_images():
     global images, image_cats
     images = {}

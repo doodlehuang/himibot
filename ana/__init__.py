@@ -23,7 +23,6 @@ config = get_plugin_config(Config)
 images = {}
 image_cats = []
 kk_accounts = []
-sanction_rate = 0
 def update_images():
     global images, image_cats
     images = {}

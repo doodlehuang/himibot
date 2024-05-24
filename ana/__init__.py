@@ -35,9 +35,9 @@ def update_images():
     return images, image_cats
 update_images()
 imgtest = on_command("imgtest", priority=5, block=True)
-ak = CommandGroup('ak')
-ak_default = ak.command(tuple(), aliases={':k', '：k'})
-ak_list = ak.command('list')
+# ak = CommandGroup('ak')
+# ak_default = ak.command(tuple(), aliases={':k', '：k'})
+# ak_list = ak.command('list')
 ana = CommandGroup('ana')
 ana_default = ana.command(tuple(), aliases={'quote', ':', '：'})
 ana_reload = ana.command('reload', permission=SUPERUSER, aliases={'quote reload', 'quote.reload', ':reload', '：reload'})
@@ -56,45 +56,44 @@ async def handle(bot: Bot, event: MessageEvent):
             return
     await imgtest.finish(MessageSegment.image('file:///' + os.path.abspath('test.png')))
 
-@ak_default.handle()
-async def handle(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
-    if event.message_type == 'group':
-        if is_banned(event.group_id):
-            return
-    ak_default.finish('现在没有了。')
-    if args:
-        s = args.extract_plain_text().lower().split(' ')
-        candidates = [i for i in images['kk'] if s[0] in i]
-        if len(s) > 1:
-            for arg in s[1:]:
-                candidates = [i for i in candidates if arg in i]
-        if candidates:
-            await ak_default.finish(MessageSegment.image('file:///' + os.path.abspath('imgs/kk/' + choice(candidates))))
-        else:
-            await ak_default.finish('未找到符合条件的语录图。')
-    else:
-        await ak_default.finish(MessageSegment.image('file:///' + os.path.abspath('imgs/kk/' + choice(images['kk']))))
+# @ak_default.handle()
+# async def handle(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
+#     if event.message_type == 'group':
+#         if is_banned(event.group_id):
+#             return
+#     if args:
+#         s = args.extract_plain_text().lower().split(' ')
+#         candidates = [i for i in images['kk'] if s[0] in i]
+#         if len(s) > 1:
+#             for arg in s[1:]:
+#                 candidates = [i for i in candidates if arg in i]
+#         if candidates:
+#             await ak_default.finish(MessageSegment.image('file:///' + os.path.abspath('imgs/kk/' + choice(candidates))))
+#         else:
+#             await ak_default.finish('未找到符合条件的语录图。')
+#     else:
+#         await ak_default.finish(MessageSegment.image('file:///' + os.path.abspath('imgs/kk/' + choice(images['kk']))))
+
+# @ak_list.handle()
+# async def handle(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
+#     if event.message_type == 'group':
+#         if is_banned(event.group_id):
+#             return
+#     if args:
+#         s = args.extract_plain_text().lower()
+#         candidates = [i for i in images['kk'] if s in i]
+#         if candidates:
+#             await ak_list.finish('在' + str(len(images['kk'])) + '张中找到' + str(len(candidates)) + '张符合搜索条件的语录图：\n' + '\n'.join(candidates))
+#         else:
+#             await ak_list.finish('未找到符合条件的语录图。')
+#     else:
+#         await ak_list.finish('共有' + str(len(images['kk'])) + '张语录图：\n' + ', '.join(images['kk']))
+
 
 @ana_reload.handle()
 async def handle(bot: Bot, event: MessageEvent):
     update_images()
     await ana_reload.finish('已使用管理员权限重载出' + str(sum([len(images[i]) for i in image_cats])) + '张语录图。')
-
-@ak_list.handle()
-async def handle(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
-    if event.message_type == 'group':
-        if is_banned(event.group_id):
-            return
-    ak_list.finish('现在没有了。')
-    if args:
-        s = args.extract_plain_text().lower()
-        candidates = [i for i in images['kk'] if s in i]
-        if candidates:
-            await ak_list.finish('在' + str(len(images['kk'])) + '张中找到' + str(len(candidates)) + '张符合搜索条件的语录图：\n' + '\n'.join(candidates))
-        else:
-            await ak_list.finish('未找到符合条件的语录图。')
-    else:
-        await ak_list.finish('共有' + str(len(images['kk'])) + '张语录图：\n' + ', '.join(images['kk']))
 
 @ana_default.handle()
 async def handle(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
@@ -102,8 +101,6 @@ async def handle(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
         if is_banned(event.group_id):
             return
     arglist = args.extract_plain_text().lower().split(' ')
-    if 'kk' in arglist:
-        await ana_default.finish('现在没有了。')
     if len(arglist) > 0:
         candidates = []
         if len(arglist) > 1:
@@ -135,8 +132,6 @@ async def handle(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
             return
     if args:
         arglist = args.extract_plain_text().lower().split(' ')
-        if 'kk' in arglist:
-            await ana_list.finish('现在没有了。')
         candidates = []
         if len(arglist) > 0:
             if len(arglist) > 1:
@@ -195,14 +190,14 @@ async def handle(bot: Bot, event: MessageEvent, arg = CommandArg()):
         imgurl = img['url']
         args = arg.extract_plain_text().lower().split(' ')
         if len(args) < 2:
-            args_kk = text.lower().split(' ')
+            args_others = text.lower().split(' ')
             if len(args) == 1:
                 args.append(args[0])
-                args[0] = args_kk[2]
+                args[0] = args_others[2]
             else:
-                args = args_kk[2:]
+                args = args_others[2:]
             if args[1] == '':
-                args[1] = args_kk[3].replace('\n', '')
+                args[1] = args_others[3].replace('\n', '')
         if len(args) > 1:
             if args[0] in image_cats or args[0].startswith('_'):
                 if imgext in ['png', 'gif', 'jpg']:

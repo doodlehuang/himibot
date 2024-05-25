@@ -149,12 +149,12 @@ async def handle(bot: Bot, event: Event, message: Message = CommandArg()):
     await whois_add.finish('添加成功。所以这个人叫' + '、'.join(whois_list[user_id]) + '。')
 
 @whois_remove.handle()
-async def handle(bot: Bot, event: Event):
+async def handle(bot: Bot, event: Event, message: Message = CommandArg()):
     if event.message_type == 'group':
         if is_banned(event.group_id):
             return
     global whois_list
-    args = str(event.get_message()).strip()
+    args = message.extract_plain_text().strip()
     reply = event.original_message['reply']
     if not args:
         await whois_remove.finish('用法：whois remove <user_id> <alias1> (alias2) (...)')

@@ -5,7 +5,7 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, RequestEvent
 from nonebot.adapters import Message, Event
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
-from himibot.plugins.keep_safety import is_banned
+from himibot.plugins.keep_safe import is_banned
 import time
 import asyncio
 

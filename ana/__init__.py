@@ -6,7 +6,7 @@ from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, MessageSegme
 from nonebot import require
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
-from himibot.plugins.keep_safety import is_banned
+from himibot.plugins.keep_safe import is_banned
 from .config import Config
 from random import choice, random
 import httpx
@@ -26,12 +26,12 @@ def update_images():
     global images, image_cats
     images = {}
     image_cats = []
-    for d in next(os.walk(os.path.abspath('imgs/')))[1]:
+    for d in next(os.walk(os.path.abspath('himibot/imgs/')))[1]:
         print(d)
         if d not in ['.cache', 'SyncTrash'] and d not in image_cats and not d.startswith('_'):
             images[d] = []
             image_cats.append(d.lower())
-            images[d] = [i.lower() for i in os.listdir('imgs/' + d) if i.split('.')[-1] in ['png', 'gif', 'jpg']]
+            images[d] = [i.lower() for i in os.listdir('himibot/imgs/' + d) if i.split('.')[-1] in ['png', 'gif', 'jpg']]
     return images, image_cats
 update_images()
 imgtest = on_command("imgtest", priority=5, block=True)
@@ -68,11 +68,11 @@ async def handle(bot: Bot, event: MessageEvent):
 #             for arg in s[1:]:
 #                 candidates = [i for i in candidates if arg in i]
 #         if candidates:
-#             await ak_default.finish(MessageSegment.image('file:///' + os.path.abspath('imgs/kk/' + choice(candidates))))
+#             await ak_default.finish(MessageSegment.image('file:///' + os.path.abspath('himibot/imgs/kk/' + choice(candidates))))
 #         else:
 #             await ak_default.finish('未找到符合条件的语录图。')
 #     else:
-#         await ak_default.finish(MessageSegment.image('file:///' + os.path.abspath('imgs/kk/' + choice(images['kk']))))
+#         await ak_default.finish(MessageSegment.image('file:///' + os.path.abspath('himibot/imgs/kk/' + choice(images['kk']))))
 
 # @ak_list.handle()
 # async def handle(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
@@ -110,7 +110,7 @@ async def handle(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
                     for arg in arglist[2:]:
                         candidates = [i for i in candidates if arg in i]
                 if candidates:
-                    await ana_default.finish(MessageSegment.image('file:///' + os.path.abspath('imgs/' + arglist[0] + '/' + choice(candidates))))
+                    await ana_default.finish(MessageSegment.image('file:///' + os.path.abspath('himibot/imgs/' + arglist[0] + '/' + choice(candidates))))
                 else:
                     await ana_default.finish('未在库' + arglist[0] + '中找到语录图。')
         for d in image_cats:
@@ -120,7 +120,7 @@ async def handle(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
             for arg in arglist[1:]:
                 candidates = [i for i in candidates if arg in i]
         if candidates:
-            await ana_default.finish(MessageSegment.image('file:///' + os.path.abspath('imgs/' + choice(candidates))))
+            await ana_default.finish(MessageSegment.image('file:///' + os.path.abspath('himibot/imgs/' + choice(candidates))))
         else:
             await ana_default.finish('未找到相关语录图。')
         
@@ -206,7 +206,7 @@ async def handle(bot: Bot, event: MessageEvent, arg = CommandArg()):
                         req = httpx.get(imgurl)
                     except Exception as e:
                         await ana_add.finish('添加语录图失败：' + str(e))
-                    with open('imgs/' + args[0] + '/' + args[1] + '.' + imgext, 'wb') as f:
+                    with open('himibot/imgs/' + args[0] + '/' + args[1] + '.' + imgext, 'wb') as f:
                         f.write(req.content)
                     update_images()
                     await ana_add.finish('已添加语录图“' + args[1] + '”至库' + args[0] + '。')

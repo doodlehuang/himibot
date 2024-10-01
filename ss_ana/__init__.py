@@ -4,7 +4,7 @@ from nonebot import on_command, on_startswith
 from nonebot.adapters import Event
 from nonebot.rule import is_type
 from nonebot.adapters.telegram.event import MessageEvent as TEvent
-from himibot.plugins.keep_safety import is_banned
+from himibot.plugins.keep_safe import is_banned
 from nonebot.adapters.discord import MessageSegment
 from nonebot.adapters.discord.commands import on_slash_command
 from httpx import get, HTTPError
@@ -19,8 +19,9 @@ __plugin_meta__ = PluginMetadata(
 )
 
 config = get_plugin_config(Config)
-with open('config.yml', 'r', encoding='utf-8') as f:
-    ss_ana_endpoint = yaml.safe_load(f)['ss_ana_endpoint']
+with open('himibot/config.yml', 'r', encoding='utf-8') as f:
+    config_dict = yaml.safe_load(f)
+    ss_ana_endpoint = config_dict['ss_ana_endpoint'] if 'ss_ana_endpoint' in config_dict else ''
 ss_ana_discord = on_slash_command(name="ss-ana", description='获取一条林槐语录。')
 ss_ana_telegram = on_startswith('/ss-ana', rule=is_type(TEvent))
 ss_ana = on_command("ss-ana", priority=5, aliases={'lhyl', '林槐语录', 'ss'}, block=True)

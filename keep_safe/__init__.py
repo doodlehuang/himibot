@@ -8,7 +8,7 @@ import yaml
 from .config import Config
 
 __plugin_meta__ = PluginMetadata(
-    name="keep-safety",
+    name="keep_safe",
     description="",
     usage="",
     config=Config,
@@ -16,7 +16,7 @@ __plugin_meta__ = PluginMetadata(
 
 config = get_plugin_config(Config)
 banned_from = dict()
-with open('config.yml', 'r', encoding='utf-8') as f:
+with open('himibot/config.yml', 'r', encoding='utf-8') as f:
     superuser_id = yaml.safe_load(f)['superuser_id']
 def load_banned_from():
     global banned_from

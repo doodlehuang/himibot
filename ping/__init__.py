@@ -18,8 +18,9 @@ __plugin_meta__ = PluginMetadata(
 )
 
 config = get_plugin_config(Config)
-with open('config.yml', 'r', encoding='utf-8') as f:
-    superuser_id = yaml.safe_load(f)['superuser_id']
+with open('himibot/config.yml', 'r', encoding='utf-8') as f:
+    config_dict = yaml.safe_load(f)
+    superuser_id = config_dict['superuser_id'] if 'superuser_id' in config_dict else '0'
 ping = on_command("ping", priority=5, permission=SUPERUSER, block=True)
 # atme = on_message(priority=10, block=True, rule=to_me())
 say = on_command("say", priority=5, permission=SUPERUSER, block=True)

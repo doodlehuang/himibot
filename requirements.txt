@@ -4,4 +4,6 @@ nonebot-adapter-telegram
 nonebot-plugin-apscheduler
 httpx
 ping3
-yaml
+openai
+pyyaml
+jsonpath

@@ -10,7 +10,7 @@ from jsonpath import jsonpath
 import os
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
-from himibot.plugins.keep_safety import is_banned
+from himibot.plugins.keep_safe import is_banned
 from .config import Config
 
 __plugin_meta__ = PluginMetadata(
@@ -25,14 +25,14 @@ whois_list = {}
 cooldown_list = []
 def load_whois():
     global whois_list
-    if 'whois.yaml' not in os.listdir():
-        with open('whois.yaml', 'w', encoding='utf-8') as f:
-            yaml.dump({}, f, allow_unicode=True)
-    with open('whois.yaml', 'r', encoding='utf-8') as f:
+    if not os.path.exists('himibot/whois.yaml'):
+        with open('himibot/whois.yaml', 'w', encoding='utf-8') as f:
+            yaml.dump({'example_id': ['himibot']}, f, allow_unicode=True)
+    with open('himibot/whois.yaml', 'r', encoding='utf-8') as f:
         whois_list = yaml.safe_load(f)
 
 def save_whois():
-    with open('whois.yaml', 'w', encoding='utf-8') as f:
+    with open('himibot/whois.yaml', 'w', encoding='utf-8') as f:
         yaml.dump(whois_list, f, allow_unicode=True)
 @scheduler.scheduled_job("interval", minutes=2, id="remove_cooldown")
 async def remove_cooldown():

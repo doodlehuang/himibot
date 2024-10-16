@@ -30,13 +30,26 @@ with open('himibot/config.yml', 'r', encoding='utf-8') as f:
     bot_http_endpoint = config_dict['bot_http_endpoint'] if 'bot_http_endpoint' in config_dict else None
     bot_http_token = config_dict['bot_http_token'] if 'bot_http_token' in config_dict else None
 
-with open('himibot/doodlegpt.txt', 'r', encoding='utf-8') as f:
-    system_prompt_text = f.read()
+
 
 openai_client = openai.OpenAI(api_key=openai_key, base_url=openai_endpoint)
 deepseek_client = openai.OpenAI(api_key=deepseek_key, base_url=deepseek_endpoint)
-start_history = [{"role": "system", "content": system_prompt_text}]
 doodlegpt_enabled = True
+platform = 'OpenAI'
+openai_model = 'gpt-4o-mini'
+max_replies = 5
+base_penalty_time = 0.5
+max_penalty_time = 8
+chat_indicator_base = '>{platform} - {remaining_style}'
+remaining_style = ['◆','◇'] # '{remaining * "◆"}{max_replies - remaining * "◇"}'
+use_reflection = True
+system_prompt_dir = ''
+system_prompt_text = ''
+start_history = []
+
+def chat_indicator(remaining:int, platform:str):
+    return '\n' + chat_indicator_base.format(platform=platform, remaining_style=remaining_style[0] * remaining + remaining_style[1] * (max_replies - remaining))
+
 
 def safe_int_conversion(value, default):
     try:
@@ -57,34 +70,35 @@ def continue_chat(user_prompt:str, stream:bool = False, platform:str = 'openai',
             model=openai_model,
             messages=history,
             temperature=0.7,
-            stream=stream,
-            max_completion_tokens=30)
+            stream=stream)
     elif platform.lower() == 'deepseek':
         return deepseek_client.chat.completions.create(
             model='deepseek-chat',
             messages=history,
-            stream=stream,
-            max_completion_tokens=30)
+            stream=stream)
 
 def reset_chat():
-    global chat_sessions, reply_ids, start_chat_ids, system_prompt_text, start_history
-    with open('himibot/doodlegpt.txt', 'r', encoding='utf-8') as f:
+    global chat_sessions, reply_ids, start_chat_ids, system_prompt_text, start_history, system_prompt_dir
+    system_prompt_dir = 'himibot/doodlegpt-reflection.txt' if use_reflection else 'himibot/doodlegpt.txt'
+    with open(system_prompt_dir, 'r', encoding='utf-8') as f:
         system_prompt_text = f.read()
     start_history = [{"role": "system", "content": system_prompt_text}]
     chat_sessions = {'example_chat_id': {'remaining': 0, 'history': start_history.copy(), 'last_bot_message_id': '0', 'reply_style': False}}
     reply_ids = []
     start_chat_ids = []
+    sent_sessions = []
+    for sessions in chat_sessions:
+        if not sessions.startswith('start_'):
+            if sessions.startswith('group'):
+                group_id = sessions.split('_')[1]
+                requests.post(f'{bot_http_endpoint}/send_group_msg', headers={'Authorization': f'Bearer {bot_http_token}'}, json={'group_id': group_id, 'message': [{'type': 'text', 'data': {'text': 'bot即将重载，检测到有未结束的对话。对话记录将被清空。'}}]}) if sessions not in sent_sessions else None
+                sent_sessions.append(sessions)
+            elif not sessions.startswith('example_'):
+                user_id = int(sessions.split('_')[0])
+                requests.post(f'{bot_http_endpoint}/send_private_msg', headers={'Authorization': f'Bearer {bot_http_token}'}, json={'user_id': user_id, 'message': [{'type': 'text', 'data': {'text': 'bot即将重载，检测到有未结束的对话。对话记录将被清空。'}}]}) if sessions not in sent_sessions else None
 
 reset_chat()
-platform = 'OpenAI'
-openai_model = 'gpt-4o-mini'
-max_replies = 5
-base_penalty_time = 0.5
-max_penalty_time = 8
-chat_indicator_base = '>{platform} - {remaining_style}'
-remaining_style = ['◆','◇'] # '{remaining * "◆"}{max_replies - remaining * "◇"}'
-def chat_indicator(remaining:int, platform:str):
-    return '\n' + chat_indicator_base.format(platform=platform, remaining_style=remaining_style[0] * remaining + remaining_style[1] * (max_replies - remaining))
+
 chat = CommandGroup('dg')
 chat_default = chat.command(tuple())
 chat_with_reply = chat.command('reply', aliases={'dg r','dgr'})
@@ -163,6 +177,8 @@ async def handle(bot: Bot, event: MessageEvent):
             collected_reponse = ''
             message_cache = ''
             response_penalty_time = base_penalty_time
+            response_reached_answer = False
+            response_use_reflection = False
             try:
                 for chunk in response:
                     if chunk.choices[0].finish_reason is None:
@@ -170,11 +186,15 @@ async def handle(bot: Bot, event: MessageEvent):
                         if '\n' in message_cache:
                             collected_reponse += message_cache
                             message_cache = message_cache.replace('\n', '').strip()
-                            if message_cache != '':
+                            if '<analyse>' in message_cache:
+                                response_use_reflection = True
+                            if message_cache != '' and (response_reached_answer or (response_use_reflection is False)):
                                 message = Message([MessageSegment.reply(user_message_id), message_cache]) if reply_style else Message(message_cache)
                                 await asyncio.sleep(random.uniform(0.1,0.2) + response_penalty_time)
                                 await reply_chat.send(message)
                                 response_penalty_time = response_penalty_time * 2 if response_penalty_time < max_penalty_time / 2 else max_penalty_time
+                            if '<answer>' in message_cache:
+                                response_reached_answer = True
                             message_cache = ''
                     else:
                         remaining -= 1
@@ -182,7 +202,7 @@ async def handle(bot: Bot, event: MessageEvent):
                         message_cache += chat_indicator(remaining, platform) if remaining > 0 else ''
                         message = Message([MessageSegment.reply(user_message_id), message_cache]) if reply_style else Message(message_cache)
                         message_id = (await reply_chat.send(message))['message_id']
-                    await asyncio.sleep(random.uniform(0.2,0.3))
+                    await asyncio.sleep(random.uniform(0.1,0.2))
                 if message_id is not None:
                     history.append({'role': 'assistant', 'content': collected_reponse})
                     print(history)
@@ -198,41 +218,47 @@ async def handle(bot: Bot, event: MessageEvent):
                 await reply_chat.finish('对话被人工智能服务商中断。请重新开始。')
 
 @chat_config.handle()
-async def handle(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
-    global platform, openai_model, max_replies, base_penalty_time, chat_indicator_base, remaining_style, max_penalty_time
-    args = args.extract_plain_text().split()
+async def handle(bot: Bot, event: MessageEvent, arg: Message = CommandArg()):
+    global platform, openai_model, max_replies, base_penalty_time, chat_indicator_base, remaining_style, max_penalty_time, use_reflection
+    args = arg.extract_plain_text().split()
     if len(args) == 0:
         # Show current configuration
-        await chat_config.finish('当前配置：\n' + f'对话平台：{platform}\n对话模型：{openai_model}\n对话次数：{max_replies}\n回车惩罚时间：{base_penalty_time}\n最大回车惩罚时间：{max_penalty_time}\n对话指示：{chat_indicator_base}\n剩余次数样式：{remaining_style}')
-        platform = args[1]
+        await chat_config.finish('当前配置：\n' + f'对话平台：{platform}\n对话模型：{openai_model}\n对话次数：{max_replies}\n回车惩罚时间：{base_penalty_time}\n最大回车惩罚时间：{max_penalty_time}\n对话指示：{chat_indicator_base}\n剩余次数样式：{remaining_style}\n使用反射：{use_reflection}')
+    elif args[0] in ['platform', 'p']:
+        platform = 'openai' if platform == 'deepseek' else 'deepseek'
         await chat_config.finish(f'对话平台已设置为{platform}。')
-    elif args[0] in ('model', 'm'):
+    elif args[0] in ['model', 'm']:
         openai_model = args[1]
         await chat_config.finish(f'对话模型已设置为{openai_model}。')
-    elif args[0] in ('max_replies', 'mr'):
+    elif args[0] in ['max_replies', 'mr']:
         max_replies = safe_int_conversion(args[1], 5)
         await chat_config.finish(f'对话次数已设置为{max_replies}。')
-    elif args[0] in ('base_penalty_time', 'bpt'):
+    elif args[0] in ['base_penalty_time', 'bpt']:
         base_penalty_time = safe_float_conversion(args[1], 0.5)
         await chat_config.finish(f'回车惩罚时间已设置为{base_penalty_time}。')
-    elif args[0] in ('max_penalty_time', 'mpt'):
+    elif args[0] in ['max_penalty_time', 'mpt']:
         max_penalty_time = safe_float_conversion(args[1], 10)
         await chat_config.finish(f'最大回车惩罚时间已设置为{max_penalty_time}。')
-    elif args[0] in ('chat_indicator_base', 'cib'):
+    elif args[0] in ['chat_indicator_base', 'cib']:
         chat_indicator_base = args[1]
         await chat_config.finish(f'对话指示已设置为{chat_indicator_base}。')
-    elif args[0] in ('remaining_style', 'rs'):
+    elif args[0] in ['remaining_style', 'rs']:
         remaining_style = list(args[1])
         await chat_config.finish(f'剩余次数样式已设置为{remaining_style}。')
+    elif args[0] in ['use_reflection', 'ur']:
+        use_reflection = not use_reflection
+        reset_chat()
+        await chat_config.finish('目前已' + ('启用' if use_reflection else '禁用') + '反射。')
     else:
         await chat_config.finish('用法：\n'
-                                 ':dg config platform(p) <platform>：设置对话平台。\n'
+                                 ':dg config platform(p)：切换对话平台。\n'
                                  ':dg config model(m) <model>：设置对话模型。\n'
                                  ':dg config max_replies(mr) <number>：设置对话次数。\n'
                                  ':dg config base_penalty_time(bpt) <number>：设置回车惩罚时间。\n'
                                  ':dg config max_penalty_time(mpt) <number>：设置最大回车惩罚时间。\n'
                                  ':dg config chat_indicator_base(cib) <text>：设置对话指示。\n'
-                                 ':dg config remaining_style(rs) <text>：设置剩余次数样式。')
+                                 ':dg config remaining_style(rs) <text>：设置剩余次数样式。\n'
+                                 ':dg config use_reflection(ur)：切换是否使用反射。')
 
 
 @switch_dg.handle()
@@ -257,15 +283,7 @@ async def handle(bot: Bot, event: MessageEvent):
 async def handle(bot: Bot, event: MessageEvent):
     await help.finish('使用方法：\n'
                       ':dg：启动无回复样式的对话。\n'
-                      ':dg reply(r)：启动有回复样式的对话。\n'
-                      '管理命令：\n'
-                      ':dg switch_platform(p)：切换对话平台。\n'
-                      ':dg switch_model(m)：切换对话模型。\n'
-                      ':dg toggle(t)：启用或禁用对话功能。\n'
-                      ':dg status(s)：查看对话功能状态。\n'
-                      ':dg clear(c)：清空所有对话。'
-                      ':dg set_max_replies(smr)：设置对话次数。')
-
+                      ':dg reply(r)：启动有回复样式的对话。\n')
 
 @driver.on_bot_disconnect
 async def disconnect_notice(bot: Bot):

@@ -20,7 +20,7 @@ proxies= {'http': mihomo_proxy, 'https': mihomo_proxy}
 no_proxies =  {'http': '', 'https': ''}
 def http_test(url = 'http://cp.cloudflare.com', use_proxy = False):
     try:
-        http_response = requests.head(url, proxies = proxies, timeout = 3 if use_proxy else no_proxies)
+        http_response = requests.head(url, proxies = proxies if use_proxy else no_proxies, timeout = 3)
         return http_response.status_code
     except requests.exceptions.RequestException:
         return False
@@ -99,7 +99,7 @@ async def handle(bot: Bot, event: Event, args: Message = CommandArg()):
         speed, method = raw_githubusercontent_speed_test()
         if speed:
             output += '直接' if method == 'direct' else ''
-            output += f'连接速度为{speed*1000:.2f}ms\n'
+            output += f'连接速度为{speed*1000:.2f}ms'
         await test.finish(output)
     else:
         url = args.extract_plain_text()

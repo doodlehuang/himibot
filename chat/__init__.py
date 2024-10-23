@@ -3,8 +3,8 @@ from nonebot.plugin import PluginMetadata
 import yaml, openai, json
 from .config import Config
 from himibot.plugins.keep_safe import is_banned
-from nonebot.rule import to_me
-from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.rule import to_me, Rule
+from nonebot.adapters.onebot.v11.event import MessageEvent, GroupMessageEvent
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.params import CommandArg
@@ -42,10 +42,14 @@ base_penalty_time = 0.5
 max_penalty_time = 8
 chat_indicator_base = '>{platform} - {remaining_style}'
 remaining_style = ['◆','◇'] # '{remaining * "◆"}{max_replies - remaining * "◇"}'
-use_reflection = True
+use_reflection = False
 system_prompt_dir = ''
 system_prompt_text = ''
 start_history = []
+max_streams = 10
+engage_percentage = 0.6
+bot_nickname = 'CodePig2047'
+streaming_groups = {'example_group_id': {'remaining': 0, 'history': start_history.copy(), 'last_bot_message_id': '0', 'reply_style': False}}
 
 def chat_indicator(remaining:int, platform:str):
     return '\n' + chat_indicator_base.format(platform=platform, remaining_style=remaining_style[0] * remaining + remaining_style[1] * (max_replies - remaining))
@@ -63,8 +67,8 @@ def safe_float_conversion(value, default):
     except (ValueError, TypeError):
         return default
 
-def continue_chat(user_prompt:str, stream:bool = False, platform:str = 'openai', history:list = start_history.copy()):
-    history.append({"role": "user", "content": user_prompt})
+def continue_chat(user_prompt:str = None, stream:bool = False, platform:str = 'openai', history:list = start_history.copy()):
+    history.append({"role": "user", "content": user_prompt}) if user_prompt is not None else None
     if platform.lower() == "openai":
         return openai_client.chat.completions.create(
             model=openai_model,
@@ -97,7 +101,33 @@ def reset_chat():
                 user_id = int(sessions.split('_')[0])
                 requests.post(f'{bot_http_endpoint}/send_private_msg', headers={'Authorization': f'Bearer {bot_http_token}'}, json={'user_id': user_id, 'message': [{'type': 'text', 'data': {'text': 'bot即将重载，检测到有未结束的对话。对话记录将被清空。'}}]}) if sessions not in sent_sessions else None
 
+async def get_history(group_id: int, fetch_message_count: int, bot: Bot, ignore_self = True):
+    fetch_message_count = fetch_message_count if fetch_message_count > 0 else 21
+    messages_from_api = await bot.get_group_msg_history(group_id=group_id, count=fetch_message_count)
+    messages='Chat messages fetched at UTC+8' + datetime.now().strftime("%Y-%m-%d %a %H:%M:%S") + ':\n'
+    valid_message_counter = 0
+    messages_from_api['messages'].pop()
+    for message in messages_from_api['messages']:
+        if message['user_id'] == bot_self_id and ignore_self:
+            continue
+        sender_nickname = message['sender']['nickname']
+        # Extract text content if present
+        message_content = ""
+        for part in message['message']:
+            if part['type'] == 'text':
+                message_text = str(part['data']['text'])
+                message_content += message_text if not (message_text.startswith(':') or message_text.startswith('/')) else ''
+        
+        # Only print messages that have text content
+        if message_content:
+            messages += f"{sender_nickname}: {message_content}\n"
+            valid_message_counter += 1
+    return messages, valid_message_counter
+
 reset_chat()
+
+async def in_streaming_group(event: GroupMessageEvent) -> bool:
+    return str(event.group_id) in streaming_groups and not event.get_plaintext().startswith(':')
 
 chat = CommandGroup('dg')
 chat_default = chat.command(tuple())
@@ -108,6 +138,9 @@ switch_dg = chat.command('toggle', permission=SUPERUSER, aliases={'dg t','dgt'})
 status = chat.command('status', permission=SUPERUSER, aliases={'dg s','dgs'})
 clear = chat.command('clear', permission=SUPERUSER, aliases={'dg c','dgc'})
 help = chat.command('help', aliases={'dg h','dg ?', 'dgh', 'dg?'})
+join = chat.command('join')
+leave = chat.command('leave')
+chat_streaming = on_message(rule=in_streaming_group)
 
 
 @chat_default.handle()
@@ -297,3 +330,118 @@ async def disconnect_notice(bot: Bot):
             elif not sessions.startswith('example_'):
                 user_id = int(sessions.split('_')[0])
                 requests.post(f'{bot_http_endpoint}/send_private_msg', headers={'Authorization': f'Bearer {bot_http_token}'}, json={'user_id': user_id, 'message': [{'type': 'text', 'data': {'text': 'bot即将重启，检测到有未结束的对话。对话记录将被清空。'}}]}) if sessions not in sent_sessions else None
+
+@join.handle()
+async def handle(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+    global streaming_groups
+    if is_banned(str(event.group_id)):
+        return
+    if str(event.group_id) in streaming_groups:
+        await join.finish('DoodleGPT 已在本群聊天。')
+    arg = args.extract_plain_text()
+    group_name = (await bot.get_group_info(group_id=event.group_id))['group_name']
+    initial_prompt, count = '', 0
+    if safe_int_conversion(arg, 0) > 0:
+        past_messages, count = await get_history(event.group_id, safe_int_conversion(arg, 20), bot, ignore_self=False)
+        past_messages.replace(bot_nickname, 'DoodleGPT')
+        initial_prompt = f"Below are some messages before you joined the group:\n{past_messages}\n(You can cue some of them.)"
+    streaming_groups[str(event.group_id)] = {'remaining': max_streams, 'history': [{"role": "system", "content": system_prompt_text + f'You have now joined a group chat called "{group_name}". Chat actively in Chinese and mention people\'s names if you\'re replying to them.'}, {"role": "user", "content": f"{initial_prompt}\nNow greet your group members."}], 'reply_style': False}
+    await join.send(f'DoodleGPT 已查看之前的{count}条文字消息并加入到本群。')
+    response = continue_chat(stream=True, platform=platform, history=streaming_groups[str(event.group_id)]['history'])
+    collected_reponse = ''
+    message_cache = ''
+    response_penalty_time = base_penalty_time
+    response_reached_answer = False
+    response_use_reflection = False
+    try:
+        for chunk in response:
+            if chunk.choices[0].finish_reason is None:
+                message_cache += chunk.choices[0].delta.content
+                if '\n' in message_cache:
+                    collected_reponse += message_cache
+                    message_cache = message_cache.replace('\n', '').strip()
+                    if '<analyse>' in message_cache:
+                        response_use_reflection = True
+                    if message_cache != '' and (response_reached_answer or (response_use_reflection is False)):
+                        message = Message(message_cache)
+                        await asyncio.sleep(random.uniform(0.1,0.2) + response_penalty_time)
+                        await bot.send_group_msg(group_id=event.group_id, message=message)
+                        response_penalty_time = response_penalty_time * 2 if response_penalty_time < max_penalty_time / 2 else max_penalty_time
+                    if '<answer>' in message_cache:
+                        response_reached_answer = True
+                    message_cache = ''
+            else:
+                collected_reponse += message_cache
+                message = Message(message_cache)
+                await asyncio.sleep(random.uniform(0.1,0.2))
+                await bot.send_group_msg(group_id=event.group_id, message=message)
+            streaming_groups[str(event.group_id)]['history'].append({'role': 'assistant', 'content': collected_reponse})
+            streaming_groups[str(event.group_id)]['history'].append({'role': 'user', 'content': ''})
+    except openai.BadRequestError as e:
+        return
+    except openai.APIError as e:
+        return
+
+
+@leave.handle()
+async def handle(bot: Bot, event: GroupMessageEvent):
+    global streaming_groups
+    if is_banned(str(event.group_id)):
+        return
+    if str(event.group_id) not in streaming_groups:
+        await leave.finish('DoodleGPT 没在本群聊天。')
+    streaming_groups.pop(str(event.group_id))
+    await leave.finish('DoodleGPT 已离开本群。')
+
+@chat_streaming.handle()
+async def handle(bot: Bot, event: GroupMessageEvent):
+    if is_banned(str(event.group_id)):
+        return
+    if doodlegpt_enabled is False:
+        return
+    remaining, history, reply_style = streaming_groups[str(event.group_id)]['remaining'], streaming_groups[str(event.group_id)]['history'], streaming_groups[str(event.group_id)]['reply_style']
+    remaining -= 1
+    streaming_groups[str(event.group_id)]['remaining'] = remaining
+    history[-1]['content'] += f'\n{event.sender.nickname}: {event.get_plaintext()}' if remaining > 0 else f'\n{event.sender.nickname}: {event.get_plaintext()}\n(You are now sending your last message before you leave the group chat. Say goodbye to members engaged in the chat at the end of your message.)'
+    if (random.random() <= engage_percentage) and remaining != 0 and not event.is_tome():
+        return
+    else:
+        response = continue_chat(stream=True, platform=platform, history=history)
+        collected_reponse = ''
+        message_cache = ''
+        response_penalty_time = base_penalty_time
+        response_reached_answer = False
+        response_use_reflection = False
+        try:
+            for chunk in response:
+                if chunk.choices[0].finish_reason is None:
+                    message_cache += chunk.choices[0].delta.content
+                    if '\n' in message_cache:
+                        collected_reponse += message_cache
+                        message_cache = message_cache.replace('\n', '').strip()
+                        if '<analyse>' in message_cache:
+                            response_use_reflection = True
+                        if message_cache != '' and (response_reached_answer or (response_use_reflection is False)):
+                            message = Message([MessageSegment.reply(event.message_id), message_cache]) if reply_style else Message(message_cache)
+                            await asyncio.sleep(random.uniform(0.1,0.2) + response_penalty_time)
+                            await bot.send_group_msg(group_id=event.group_id, message=message)
+                            response_penalty_time = response_penalty_time * 2 if response_penalty_time < max_penalty_time / 2 else max_penalty_time
+                        if '<answer>' in message_cache:
+                            response_reached_answer = True
+                        message_cache = ''
+                else:
+                    collected_reponse += message_cache
+                    message = Message([MessageSegment.reply(event.message_id), message_cache]) if reply_style else Message(message_cache)
+                    await asyncio.sleep(random.uniform(0.1,0.2))
+                    await bot.send_group_msg(group_id=event.group_id, message=message)
+            if remaining > 0:
+                history.append({'role': 'assistant', 'content': collected_reponse})
+                history.append({'role': 'user', 'content': ''})
+                print(remaining)
+                streaming_groups[str(event.group_id)] = {'remaining': remaining, 'history': history, 'reply_style': reply_style}
+            else:
+                streaming_groups.pop(str(event.group_id))
+        except openai.BadRequestError as e:
+            return
+        except openai.APIError as e:
+            return

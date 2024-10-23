@@ -7,3 +7,8 @@ ping3
 openai
 pyyaml
 jsonpath
+deep-translator
+beautifulsoup4
+python-whois
+mcstatus
+playwright

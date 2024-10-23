@@ -3,6 +3,7 @@ from nonebot.plugin import PluginMetadata
 from nonebot.adapters.onebot.v11 import Bot, Event, GroupMessageEvent, Message, MessageEvent
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
+from himibot.plugins.chat import get_history
 from .config import Config
 import datetime, openai, yaml
 from nonebot_plugin_apscheduler import scheduler
@@ -45,29 +46,6 @@ def safe_int_conversion(value, default=20):
         return int(value)
     except (ValueError, TypeError):
         return default
-
-async def get_history(group_id: int, fetch_message_count: int, bot: Bot):
-    fetch_message_count = fetch_message_count if fetch_message_count > 0 else 21
-    messages_from_api = await bot.get_group_msg_history(group_id=group_id, count=fetch_message_count)
-    messages='Chat messages fetched at UTC+8' + datetime.datetime.now().strftime("%Y-%m-%d %a %H:%M:%S") + ':\n'
-    valid_message_counter = 0
-    messages_from_api['messages'].pop()
-    for message in messages_from_api['messages']:
-        if message['user_id'] == bot_self_id:
-            continue
-        sender_nickname = message['sender']['nickname']
-        # Extract text content if present
-        message_content = ""
-        for part in message['message']:
-            if part['type'] == 'text':
-                message_text = str(part['data']['text'])
-                message_content += message_text if not (message_text.startswith(':') or message_text.startswith('/')) else ''
-        
-        # Only print messages that have text content
-        if message_content:
-            messages += f"{sender_nickname}: {message_content}\n"
-            valid_message_counter += 1
-    return messages, valid_message_counter
 
 @get_history_message.handle()
 async def handle(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):

@@ -12,3 +12,7 @@ beautifulsoup4
 python-whois
 mcstatus
 playwright
+dnspython
+pypinyin
+thefuzz
+glotio-api

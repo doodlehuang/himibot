@@ -200,8 +200,8 @@ async def handle(bot: Bot, event: Event, args: Message = CommandArg()):
         output += '网络：'
         output += '受限' if blocked_without_proxy() else '自由'
         local_region, remote_region = get_ip_info(use_proxy=False), get_ip_info()
-        output += f'（{local_region["countryCode"] if local_region else '（不可用'}'
-        output += f'/{remote_region["countryCode"] if remote_region else '不可用）'}）\n'
+        output += f'（{local_region["countryCode"] if local_region else '不可用'}'
+        output += f'/{remote_region["countryCode"] if remote_region else '不可用'}）\n'
         output += 'Google 访问状况：'
         google_result = blocked_without_proxy('https://www.google.com/generate_204')
         if google_result == 'Error':
@@ -233,7 +233,7 @@ async def handle(bot: Bot, event: Event, args: Message = CommandArg()):
             output += '失败\n'
         elif blocked_without_proxy(url):
             output += 'BIC: Yes\n'
-            http_result = http_test(url, True)
+            http_result = http_test(url, proxies)
             output += f'成功，状态码为{http_result}' if http_result else '失败'
         else:
             output += 'BIC: No\n'

@@ -47,7 +47,7 @@ system_prompt_dir = ''
 system_prompt_text = ''
 start_history = []
 max_streams = 10
-engage_percentage = 0.6
+engage_percentage = 0.1
 bot_nickname = 'CodePig2047'
 streaming_groups = {'example_group_id': {'remaining': 0, 'history': start_history.copy(), 'last_bot_message_id': '0', 'reply_style': False}}
 
@@ -252,11 +252,11 @@ async def handle(bot: Bot, event: MessageEvent):
 
 @chat_config.handle()
 async def handle(bot: Bot, event: MessageEvent, arg: Message = CommandArg()):
-    global platform, openai_model, max_replies, base_penalty_time, chat_indicator_base, remaining_style, max_penalty_time, use_reflection
+    global platform, openai_model, max_replies, base_penalty_time, chat_indicator_base, remaining_style, max_penalty_time, use_reflection, max_streams, engage_percentage
     args = arg.extract_plain_text().split()
     if len(args) == 0:
         # Show current configuration
-        await chat_config.finish('当前配置：\n' + f'对话平台：{platform}\n对话模型：{openai_model}\n对话次数：{max_replies}\n回车惩罚时间：{base_penalty_time}\n最大回车惩罚时间：{max_penalty_time}\n对话指示：{chat_indicator_base}\n剩余次数样式：{remaining_style}\n使用反射：{use_reflection}')
+        await chat_config.finish('当前配置：\n' + f'对话平台：{platform}\n对话模型：{openai_model}\n对话次数：{max_replies}\n回车惩罚时间：{base_penalty_time}\n最大回车惩罚时间：{max_penalty_time}\n对话指示：{chat_indicator_base}\n剩余次数样式：{remaining_style}\n使用反射：{use_reflection}\n最大参与对话数：{max_streams}\n参与对话概率：{engage_percentage}')
     elif args[0] in ['platform', 'p']:
         platform = 'openai' if platform == 'deepseek' else 'deepseek'
         await chat_config.finish(f'对话平台已设置为{platform}。')
@@ -282,6 +282,12 @@ async def handle(bot: Bot, event: MessageEvent, arg: Message = CommandArg()):
         use_reflection = not use_reflection
         reset_chat()
         await chat_config.finish('目前已' + ('启用' if use_reflection else '禁用') + '反射。')
+    elif args[0] in ['max_streams', 'ms']:
+        max_streams = safe_int_conversion(args[1], 10)
+        await chat_config.finish(f'最大参与对话数已设置为{max_streams}。')
+    elif args[0] in ['engage_percentage', 'ep']:
+        engage_percentage = safe_float_conversion(args[1], 0.1)
+        await chat_config.finish(f'参与对话概率已设置为{engage_percentage}。')
     else:
         await chat_config.finish('用法：\n'
                                  ':dg config platform(p)：切换对话平台。\n'
@@ -291,7 +297,9 @@ async def handle(bot: Bot, event: MessageEvent, arg: Message = CommandArg()):
                                  ':dg config max_penalty_time(mpt) <number>：设置最大回车惩罚时间。\n'
                                  ':dg config chat_indicator_base(cib) <text>：设置对话指示。\n'
                                  ':dg config remaining_style(rs) <text>：设置剩余次数样式。\n'
-                                 ':dg config use_reflection(ur)：切换是否使用反射。')
+                                 ':dg config use_reflection(ur)：切换是否使用反射。\n'
+                                    ':dg config max_streams(ms) <number>：设置最大参与对话数。\n'
+                                    ':dg config engage_percentage(ep) <number>：设置参与对话概率。')
 
 
 @switch_dg.handle()
@@ -403,7 +411,7 @@ async def handle(bot: Bot, event: GroupMessageEvent):
     remaining -= 1
     streaming_groups[str(event.group_id)]['remaining'] = remaining
     history[-1]['content'] += f'\n{event.sender.nickname}: {event.get_plaintext()}' if remaining > 0 else f'\n{event.sender.nickname}: {event.get_plaintext()}\n(You are now sending your last message before you leave the group chat. Say goodbye to members engaged in the chat at the end of your message.)'
-    if (random.random() <= engage_percentage) and remaining != 0 and not event.is_tome():
+    if (random.random() >= engage_percentage) and remaining != 0 and not event.is_tome():
         return
     else:
         response = continue_chat(stream=True, platform=platform, history=history)

@@ -26,13 +26,16 @@ def update_images():
     global images, image_cats
     images = {}
     image_cats = []
-    for d in next(os.walk(os.path.abspath('himibot/imgs/')))[1]:
-        print(d)
-        if d not in ['.cache', 'SyncTrash'] and d not in image_cats and not d.startswith('_'):
-            images[d] = []
-            image_cats.append(d.lower())
-            images[d] = [i.lower() for i in os.listdir('himibot/imgs/' + d) if i.split('.')[-1] in ['png', 'gif', 'jpg']]
-    return images, image_cats
+    if os.path.exists('himibot/imgs/'):
+        for d in next(os.walk(os.path.abspath('himibot/imgs/')))[1]:
+            print(d)
+            if d not in ['.cache', 'SyncTrash'] and d not in image_cats and not d.startswith('_'):
+                images[d] = []
+                image_cats.append(d.lower())
+                images[d] = [i.lower() for i in os.listdir('himibot/imgs/' + d) if i.split('.')[-1] in ['png', 'gif', 'jpg']]
+        return images, image_cats
+    else:
+        return None
 update_images()
 imgtest = on_command("imgtest", priority=5, block=True)
 # ak = CommandGroup('ak')

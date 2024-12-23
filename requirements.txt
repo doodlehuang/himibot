@@ -16,3 +16,4 @@ dnspython
 pypinyin
 thefuzz
 glotio-api
+pycountry

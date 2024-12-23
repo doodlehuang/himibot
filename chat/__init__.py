@@ -129,10 +129,13 @@ reset_chat()
 async def in_streaming_group(event: GroupMessageEvent) -> bool:
     return str(event.group_id) in streaming_groups and not event.get_plaintext().startswith(':')
 
+async def in_chat(event: MessageEvent) -> bool:
+    return (str(event.reply.message_id) in (reply_ids + start_chat_ids) and doodlegpt_enabled) if event.reply else False
+    
 chat = CommandGroup('dg')
 chat_default = chat.command(tuple())
 chat_with_reply = chat.command('reply', aliases={'dg r','dgr'})
-reply_chat = on_message(rule=to_me(), priority=10)
+reply_chat = on_message(rule=to_me() & in_chat, priority=5)
 chat_config = chat.command('config', permission=SUPERUSER)
 switch_dg = chat.command('toggle', permission=SUPERUSER, aliases={'dg t','dgt'})
 status = chat.command('status', permission=SUPERUSER, aliases={'dg s','dgs'})
@@ -178,77 +181,71 @@ async def handle(bot: Bot, event: MessageEvent):
 
 @reply_chat.handle()
 async def handle(bot: Bot, event: MessageEvent):
-    if event.reply:
-        if event.message_type == 'group':
-            if is_banned(event.group_id):
-                return
-            if doodlegpt_enabled is False:
-                return
-        reply_id=str(event.reply.message_id)
-        user_message_id = event.message_id
-        if reply_id in (reply_ids + start_chat_ids):
-            if reply_id in reply_ids:
-                reply_ids.remove(reply_id)
-            chat_id = [i for i in chat_sessions if chat_sessions[i]['last_bot_message_id'] == reply_id][0]
-            additional_text = ''
-            if chat_id.startswith('start_'):
-                new_chat_id = event.get_session_id() + '_' + datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
-                chat_sessions[new_chat_id] = chat_sessions[chat_id].copy()
-                chat_sessions[new_chat_id]['last_bot_message_id'] = 0
-                chat_id = new_chat_id
-                chat_sessions[new_chat_id]['history'][0]['content'] += '\nTime now in UTC+8: ' + datetime.now().strftime('%Y-%m-%d %a %H:%M:%S')
-            print(chat_id)
-            history = chat_sessions[chat_id]['history']
-            remaining = chat_sessions[chat_id]['remaining']
-            reply_style = chat_sessions[chat_id]['reply_style']
-            if remaining <= 0:
-                await reply_chat.finish('对话次数已用完。')
-            user_prompt = event.get_plaintext() + additional_text
-            if remaining == 1:
-                user_prompt += '\n\n(This is our last message. Please say goodbye to me at the end.)'
-            response = continue_chat(user_prompt, stream=True, platform=platform, history=history)
-            collected_reponse = ''
-            message_cache = ''
-            response_penalty_time = base_penalty_time
-            response_reached_answer = False
-            response_use_reflection = False
-            try:
-                for chunk in response:
-                    if chunk.choices[0].finish_reason is None:
-                        message_cache += chunk.choices[0].delta.content
-                        if '\n' in message_cache:
-                            collected_reponse += message_cache
-                            message_cache = message_cache.replace('\n', '').strip()
-                            if '<analyse>' in message_cache:
-                                response_use_reflection = True
-                            if message_cache != '' and (response_reached_answer or (response_use_reflection is False)):
-                                message = Message([MessageSegment.reply(user_message_id), message_cache]) if reply_style else Message(message_cache)
-                                await asyncio.sleep(random.uniform(0.1,0.2) + response_penalty_time)
-                                await reply_chat.send(message)
-                                response_penalty_time = response_penalty_time * 2 if response_penalty_time < max_penalty_time / 2 else max_penalty_time
-                            if '<answer>' in message_cache:
-                                response_reached_answer = True
-                            message_cache = ''
-                    else:
-                        remaining -= 1
+    reply_id=str(event.reply.message_id)
+    user_message_id = event.message_id
+    if reply_id in (reply_ids + start_chat_ids):
+        if reply_id in reply_ids:
+            reply_ids.remove(reply_id)
+        chat_id = [i for i in chat_sessions if chat_sessions[i]['last_bot_message_id'] == reply_id][0]
+        additional_text = ''
+        if chat_id.startswith('start_'):
+            new_chat_id = event.get_session_id() + '_' + datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+            chat_sessions[new_chat_id] = chat_sessions[chat_id].copy()
+            chat_sessions[new_chat_id]['last_bot_message_id'] = 0
+            chat_id = new_chat_id
+            chat_sessions[new_chat_id]['history'][0]['content'] += '\nTime now in UTC+8: ' + datetime.now().strftime('%Y-%m-%d %a %H:%M:%S')
+        print(chat_id)
+        history = chat_sessions[chat_id]['history']
+        remaining = chat_sessions[chat_id]['remaining']
+        reply_style = chat_sessions[chat_id]['reply_style']
+        if remaining <= 0:
+            await reply_chat.finish('对话次数已用完。')
+        user_prompt = event.get_plaintext() + additional_text
+        if remaining == 1:
+            user_prompt += '\n\n(This is our last message. Please say goodbye to me at the end.)'
+        response = continue_chat(user_prompt, stream=True, platform=platform, history=history)
+        collected_reponse = ''
+        message_cache = ''
+        response_penalty_time = base_penalty_time
+        response_reached_answer = False
+        response_use_reflection = False
+        try:
+            for chunk in response:
+                if chunk.choices[0].finish_reason is None:
+                    message_cache += chunk.choices[0].delta.content
+                    if '\n' in message_cache:
                         collected_reponse += message_cache
-                        message_cache += chat_indicator(remaining, platform) if remaining > 0 else ''
-                        message = Message([MessageSegment.reply(user_message_id), message_cache]) if reply_style else Message(message_cache)
-                        message_id = (await reply_chat.send(message))['message_id']
-                    await asyncio.sleep(random.uniform(0.1,0.2))
-                if message_id is not None:
-                    history.append({'role': 'assistant', 'content': collected_reponse})
-                    print(history)
-                    if remaining > 0:
-                        chat_sessions[chat_id] = {'remaining': remaining, 'history': history, 'last_bot_message_id': str(message_id), 'reply_style': reply_style}
-                        reply_ids.append(str(message_id))
-                    else:
-                        chat_sessions.pop(chat_id)
-                    print(reply_ids)
+                        message_cache = message_cache.replace('\n', '').strip()
+                        if '<analyse>' in message_cache:
+                            response_use_reflection = True
+                        if message_cache != '' and (response_reached_answer or (response_use_reflection is False)):
+                            message = Message([MessageSegment.reply(user_message_id), message_cache]) if reply_style else Message(message_cache)
+                            await asyncio.sleep(random.uniform(0.1,0.2) + response_penalty_time)
+                            await reply_chat.send(message)
+                            response_penalty_time = response_penalty_time * 2 if response_penalty_time < max_penalty_time / 2 else max_penalty_time
+                        if '<answer>' in message_cache:
+                            response_reached_answer = True
+                        message_cache = ''
                 else:
-                    await reply_chat.finish('对话被中断。请重新开始。')
-            except openai.BadRequestError as e:
-                await reply_chat.finish('对话被人工智能服务商中断。请重新开始。')
+                    remaining -= 1
+                    collected_reponse += message_cache
+                    message_cache += chat_indicator(remaining, platform) if remaining > 0 else ''
+                    message = Message([MessageSegment.reply(user_message_id), message_cache]) if reply_style else Message(message_cache)
+                    message_id = (await reply_chat.send(message))['message_id']
+                await asyncio.sleep(random.uniform(0.1,0.2))
+            if message_id is not None:
+                history.append({'role': 'assistant', 'content': collected_reponse})
+                print(history)
+                if remaining > 0:
+                    chat_sessions[chat_id] = {'remaining': remaining, 'history': history, 'last_bot_message_id': str(message_id), 'reply_style': reply_style}
+                    reply_ids.append(str(message_id))
+                else:
+                    chat_sessions.pop(chat_id)
+                print(reply_ids)
+            else:
+                await reply_chat.finish('对话被中断。请重新开始。')
+        except openai.BadRequestError as e:
+            await reply_chat.finish('对话被人工智能服务商中断。请重新开始。')
 
 @chat_config.handle()
 async def handle(bot: Bot, event: MessageEvent, arg: Message = CommandArg()):

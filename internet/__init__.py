@@ -3,7 +3,7 @@ from nonebot.plugin import PluginMetadata
 from nonebot.params import CommandArg
 from nonebot.adapters import Bot, Message, Event
 from himibot.plugins.keep_safe import is_banned
-import importlib, requests, datetime, yaml, json
+import importlib, requests, datetime, yaml, json, pycountry, gettext
 from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
 from .config import Config
@@ -23,6 +23,9 @@ with open('himibot/config.yml', 'r', encoding='utf-8') as f:
 
 proxies= {'http': http_proxy, 'https': http_proxy}
 no_proxies =  {'http': '', 'https': ''}
+
+country_names = gettext.translation('iso3166-1', pycountry.LOCALES_DIR, languages=['zh_CN'])
+
 def http_test(url = 'http://cp.cloudflare.com', proxies = no_proxies):
     try:
         http_response = requests.head(url, proxies = proxies, timeout = 2)
@@ -43,7 +46,7 @@ def blocked_without_proxy(url = 'https://www.v2ex.com/generate_204'):
         
 def extract_prefdomain_url(proxies = no_proxies):
     try:
-        content = requests.get('https://www.google.com', proxies=proxies).text
+        content = requests.get('https://www.google.com', proxies=proxies, timeout=2).text
     except requests.RequestException:
         return None
     soup = BeautifulSoup(content, 'html.parser')
@@ -58,9 +61,9 @@ def extract_prefdomain_url(proxies = no_proxies):
         print(domain, prefdom)
         if domain and prefdom:
             if domain == 'www.google.com.hk' and prefdom == 'US':
-                return 'CN'
+                return country_names.gettext(pycountry.countries.get(alpha_2='CN').name)
             else:
-                return prefdom
+                return country_names.gettext(pycountry.countries.get(alpha_2=prefdom).common_name if pycountry.countries.get(alpha_2=prefdom).__dict__['_fields'].get('common_name') and prefdom != 'TW' else pycountry.countries.get(alpha_2=prefdom).name) if prefdom not in ('HK', 'MO') else country_names.gettext(pycountry.countries.get(alpha_2=prefdom).official_name)[:4]
     else:
         return None
 
@@ -68,13 +71,13 @@ def raw_githubusercontent_speed_test(proxy_first = False):
     try:
         if not proxy_first:
             start = datetime.datetime.now()
-            requests.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxies=no_proxies)
+            requests.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxies=no_proxies, timeout=1)
             end = datetime.datetime.now()
             time_without_proxy = end - start
             return time_without_proxy.total_seconds(), 'direct'
         else:
             start = datetime.datetime.now()
-            requests.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxies=proxies)
+            requests.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxies=proxies, timeout=1)
             end = datetime.datetime.now()
             time_with_proxy = end - start
             return time_with_proxy.total_seconds(), 'proxy'
@@ -82,13 +85,13 @@ def raw_githubusercontent_speed_test(proxy_first = False):
         try:
             if not proxy_first:
                 start = datetime.datetime.now()
-                requests.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxies=proxies)
+                requests.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxies=proxies, timeout=2)
                 end = datetime.datetime.now()
                 time_with_proxy = end - start
                 return time_with_proxy.total_seconds(), 'proxy'
             else:
                 start = datetime.datetime.now()
-                requests.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxies=no_proxies)
+                requests.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxies=no_proxies, timeout=2)
                 end = datetime.datetime.now()
                 time_without_proxy = end - start
                 return time_without_proxy.total_seconds(), 'direct'
@@ -97,7 +100,7 @@ def raw_githubusercontent_speed_test(proxy_first = False):
         
 def get_ip_info(ip = '', use_proxy = True):
     try:
-        ip_info = requests.get(f'http://ip-api.com/json/{ip}', proxies=proxies if use_proxy else no_proxies).json()
+        ip_info = requests.get(f'http://ip-api.com/json/{ip}', proxies=proxies if use_proxy else no_proxies, timeout=2).json()
         return ip_info
     except requests.RequestException:
         return False
@@ -169,7 +172,7 @@ def show_headers(url):
 
 def get_academic_institute():
     try:
-        response = requests.get('https://login.cnki.net/TopLogin/api/loginapi/IpLoginFlush', headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'})
+        response = requests.get('https://login.cnki.net/TopLogin/api/loginapi/IpLoginFlush', headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'}, timeout=2)
         result = json.loads(response.text[1:-1])
     except Exception:
         return False
@@ -200,8 +203,8 @@ async def handle(bot: Bot, event: Event, args: Message = CommandArg()):
         output += '网络：'
         output += '受限' if blocked_without_proxy() else '自由'
         local_region, remote_region = get_ip_info(use_proxy=False), get_ip_info()
-        output += f'（{local_region["countryCode"] if local_region else '不可用'}'
-        output += f'/{remote_region["countryCode"] if remote_region else '不可用'}）\n'
+        output += f'（{GoogleTranslator(source='en', target='zh-CN', proxies=proxies).translate(f'{local_region["regionName"]}, {local_region["country"]} ').replace('中国', '') if local_region else '不可用'}'
+        output += f'/{GoogleTranslator(source='en', target='zh-CN', proxies=proxies).translate(f'{remote_region["regionName"]}, {remote_region["country"]} ').replace('中国', '') if remote_region else '不可用'}）\n'
         output += 'Google 访问状况：'
         google_result = blocked_without_proxy('https://www.google.com/generate_204')
         if google_result == 'Error':
@@ -214,15 +217,16 @@ async def handle(bot: Bot, event: Event, args: Message = CommandArg()):
             output += f'间接'
             region = extract_prefdomain_url(proxies)
             output += f'（{region}）' if region else ''
-        output += '\n'
-        institude = get_academic_institute()
-        if institude:
-            output += f'学术机构：{institude}\n'
-        output += 'Raw GitHub User Content 访问测速：'
+        output += '\nRaw GitHub User Content 访问测速：'
         speed, method = raw_githubusercontent_speed_test()
-        if speed:
+        if speed and method:
             output += '直接' if method == 'direct' else '间接'
             output += f'连接用时{speed*1000:.2f}ms'
+        else:
+            output += '失败'
+        institude = get_academic_institute()
+        if institude:
+            output += f'\n学术机构：{institude}'
         await test.finish(output)
     else:
         url = args.extract_plain_text()
@@ -281,7 +285,7 @@ async def handle(bot: Bot, event: Event, args: Message = CommandArg()):
         else:
             await whois_query.finish('查询失败')
     else:
-        await whois_query.finish('请输入域名')\
+        await whois_query.finish('请输入域名')
         
 @show_headers_cmd.handle()
 async def handle(bot: Bot, event: Event, args: Message = CommandArg()):

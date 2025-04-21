@@ -26,11 +26,11 @@ with open('himibot/config.yml', 'r', encoding='utf-8') as f:
     bot_self_id = config_dict['bot_self_id'] if 'bot_self_id' in config_dict else 0
     go_to_groups = config_dict['go_to_groups'] if 'go_to_groups' in config_dict else {}
 
-print(go_to_groups)
-openai_client = openai.OpenAI(api_key=openai_key, base_url=openai_endpoint)
-deepseek_client = openai.OpenAI(api_key=deepseek_key, base_url=deepseek_endpoint)
+openai_client = openai.AsyncOpenAI(api_key=openai_key, base_url=openai_endpoint)
+deepseek_client = openai.AsyncOpenAI(api_key=deepseek_key, base_url=deepseek_endpoint)
 start_history = [{"role": "system", "content": 'You are an AI assistant tasked with summarizing chat conversations in Chinese. Your job is to provide a concise and coherent summary of the entire conversation in one natural paragraph. The summary should focus on the main topics discussed in the chat without listing messages verbatim. Avoid using any markdown formatting, symbols, or line breaks. Aim to convey the essence of the exchange in a clear and topic-oriented manner.'}]
-openai_model = 'gpt-4o-mini'
+openai_model = 'deepseek/deepseek-v3/community'
+deepseek_model = 'deepseek-chat'
 user_cooldown_list = {'example_user_id': 10}
 
 summary = CommandGroup('summary')
@@ -55,26 +55,30 @@ async def handle(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(
         remaining_time = user_cooldown_list[user_id]
         await get_history_message.finish(f'您还需等待{remaining_time}分钟才能再次使用此功能。')
     fetch_message_count = safe_int_conversion(args.extract_plain_text()) + 1
+    if fetch_message_count > 500:
+        await get_history_message.finish('无法获取超过500条的消息记录。')
+    elif fetch_message_count < 21:
+        fetch_message_count = 21
     messages, valid_message_counter = await get_history(group_id, fetch_message_count, bot)
     history = start_history.copy()
     history.append({"role": "user", "content": messages})
     try: 
-        response = openai_client.chat.completions.create(
+        response = await openai_client.chat.completions.create(
             model=openai_model,
             messages=history,
             temperature=0.7,
             stream=False)
         summary = response.choices[0].message.content
-        successful_model = 'gpt-4o-mini'
+        successful_model = openai_model
     except openai.BadRequestError as e:
         try:
             await get_history_message.send('OpenAI 请求失败，尝试使用 DeepSeek 模型...')
-            response = deepseek_client.chat.completions.create(
-                model='deepseek-chat',
+            response = await deepseek_client.chat.completions.create(
+                model=deepseek_model,
                 messages=history,
                 stream=False)
             summary = response.choices[0].message.content
-            successful_model = 'deepseek-chat'
+            successful_model = deepseek_model
         except openai.BadRequestError as e:
             summary = str(e)
             successful_model = 'none'
@@ -128,17 +132,17 @@ async def handle(bot: Bot, event: MessageEvent, args = CommandArg()):
     history = start_history.copy()
     history.append({"role": "user", "content": messages})
     try: 
-        response = openai_client.chat.completions.create(
+        response = await openai_client.chat.completions.create(
             model=openai_model,
             messages=history,
             temperature=0.7,
             stream=False)
         summary = response.choices[0].message.content
-        successful_model = 'gpt-4o-mini'
+        successful_model = openai_model
     except openai.BadRequestError as e:
         try:
             await supersummary.send('OpenAI model failed, trying Deepseek model...')
-            response = deepseek_client.chat.completions.create(
+            response = await deepseek_client.chat.completions.create(
                 model='deepseek-chat',
                 messages=history,
                 stream=False)

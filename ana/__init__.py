@@ -9,7 +9,7 @@ from nonebot_plugin_apscheduler import scheduler
 from himibot.plugins.keep_safe import is_banned
 from .config import Config
 from random import choice, random
-import httpx
+import aiohttp
 import os
 
 __plugin_meta__ = PluginMetadata(
@@ -206,7 +206,9 @@ async def handle(bot: Bot, event: MessageEvent, arg = CommandArg()):
                 if imgext in ['png', 'gif', 'jpg']:
                     req = ''
                     try: 
-                        req = httpx.get(imgurl)
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(imgurl) as response:
+                                req = await response.read()
                     except Exception as e:
                         await ana_add.finish('添加语录图失败：' + str(e))
                     with open('himibot/imgs/' + args[0] + '/' + args[1] + '.' + imgext, 'wb') as f:

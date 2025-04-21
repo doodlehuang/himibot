@@ -21,7 +21,7 @@ config = get_plugin_config(Config)
 with open('himibot/config.yml', 'r', encoding='utf-8') as f:
     config_dict = yaml.safe_load(f)
     superuser_id = config_dict['superuser_id'] if 'superuser_id' in config_dict else '0'
-ping = on_command("ping", priority=5, permission=SUPERUSER, block=True)
+ping = on_command("ping", priority=5, block=True)
 # atme = on_message(priority=10, block=True, rule=to_me())
 say = on_command("say", priority=5, permission=SUPERUSER, block=True)
 send = on_command("send", priority=5, permission=SUPERUSER, block=True)

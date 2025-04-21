@@ -2,6 +2,7 @@ nonebot-adapter-onebot
 nonebot-adapter-discord
 nonebot-adapter-telegram
 nonebot-plugin-apscheduler
+nonebot-plugin-alconna
 httpx
 ping3
 openai
@@ -13,7 +14,7 @@ python-whois
 mcstatus
 playwright
 dnspython
-pypinyin
-thefuzz
 glotio-api
 pycountry
+tencentcloud-sdk-python
+aiohttp

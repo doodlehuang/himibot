@@ -9,6 +9,6 @@ __plugin_meta__ = PluginMetadata(
     usage="",
     config=Config,
 )
-print(date.today())
+# print(date.today())
 config = get_plugin_config(Config)
 

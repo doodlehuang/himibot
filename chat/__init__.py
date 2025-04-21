@@ -1,8 +1,8 @@
 from nonebot import get_plugin_config, on_message, CommandGroup, get_driver, get_bot
 from nonebot.plugin import PluginMetadata
-import yaml, openai, json
+import yaml, json
 from .config import Config
-from himibot.plugins.keep_safe import is_banned
+from himibot.plugins.keep_safe import is_banned, text_moderation
 from nonebot.rule import to_me, Rule
 from nonebot.adapters.onebot.v11.event import MessageEvent, GroupMessageEvent
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
@@ -11,6 +11,7 @@ from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
 from datetime import datetime
 import asyncio, random, requests
+import openai
 __plugin_meta__ = PluginMetadata(
     name="chat",
     description="",
@@ -30,19 +31,18 @@ with open('himibot/config.yml', 'r', encoding='utf-8') as f:
     bot_http_endpoint = config_dict['bot_http_endpoint'] if 'bot_http_endpoint' in config_dict else None
     bot_http_token = config_dict['bot_http_token'] if 'bot_http_token' in config_dict else None
 
-
-
-openai_client = openai.OpenAI(api_key=openai_key, base_url=openai_endpoint)
-deepseek_client = openai.OpenAI(api_key=deepseek_key, base_url=deepseek_endpoint)
+openai_client = openai.AsyncOpenAI(api_key=openai_key, base_url=openai_endpoint)
+deepseek_client = openai.AsyncOpenAI(api_key=deepseek_key, base_url=deepseek_endpoint)
 doodlegpt_enabled = True
-platform = 'OpenAI'
-openai_model = 'gpt-4o-mini'
+platform = 'DeepSeek'
+openai_model = 'deepseek/deepseek-v3/community'
+deepseek_model = 'deepseek-chat'
 max_replies = 5
 base_penalty_time = 0.5
 max_penalty_time = 8
 chat_indicator_base = '>{platform} - {remaining_style}'
 remaining_style = ['◆','◇'] # '{remaining * "◆"}{max_replies - remaining * "◇"}'
-use_reflection = False
+use_reflection = True
 system_prompt_dir = ''
 system_prompt_text = ''
 start_history = []
@@ -67,17 +67,16 @@ def safe_float_conversion(value, default):
     except (ValueError, TypeError):
         return default
 
-def continue_chat(user_prompt:str = None, stream:bool = False, platform:str = 'openai', history:list = start_history.copy()):
+async def continue_chat(user_prompt:str = None, stream:bool = False, platform:str = 'openai', history:list = start_history.copy()):
     history.append({"role": "user", "content": user_prompt}) if user_prompt is not None else None
-    if platform.lower() == "openai":
-        return openai_client.chat.completions.create(
+    if platform.lower().startswith("openai"):
+        return await openai_client.chat.completions.create(
             model=openai_model,
             messages=history,
-            temperature=0.7,
             stream=stream)
-    elif platform.lower() == 'deepseek':
-        return deepseek_client.chat.completions.create(
-            model='deepseek-chat',
+    elif platform.lower().startswith('deepseek'):
+        return await deepseek_client.chat.completions.create(
+            model=deepseek_model,
             messages=history,
             stream=stream)
 
@@ -203,27 +202,31 @@ async def handle(bot: Bot, event: MessageEvent):
         user_prompt = event.get_plaintext() + additional_text
         if remaining == 1:
             user_prompt += '\n\n(This is our last message. Please say goodbye to me at the end.)'
-        response = continue_chat(user_prompt, stream=True, platform=platform, history=history)
+        response = await continue_chat(user_prompt, stream=True, platform=platform, history=history)
         collected_reponse = ''
         message_cache = ''
         response_penalty_time = base_penalty_time
         response_reached_answer = False
         response_use_reflection = False
         try:
-            for chunk in response:
+            async for chunk in response:
                 if chunk.choices[0].finish_reason is None:
-                    message_cache += chunk.choices[0].delta.content
+                    message_cache += chunk.choices[0].delta.content or ''
                     if '\n' in message_cache:
                         collected_reponse += message_cache
                         message_cache = message_cache.replace('\n', '').strip()
-                        if '<analyse>' in message_cache:
+                        if '<think>' in message_cache:
                             response_use_reflection = True
                         if message_cache != '' and (response_reached_answer or (response_use_reflection is False)):
-                            message = Message([MessageSegment.reply(user_message_id), message_cache]) if reply_style else Message(message_cache)
-                            await asyncio.sleep(random.uniform(0.1,0.2) + response_penalty_time)
-                            await reply_chat.send(message)
-                            response_penalty_time = response_penalty_time * 2 if response_penalty_time < max_penalty_time / 2 else max_penalty_time
-                        if '<answer>' in message_cache:
+                            moderation_result = text_moderation(message_cache, message_id=chat_id)
+                            if moderation_result['Suggestion'] != 'Block':
+                                message = Message([MessageSegment.reply(user_message_id), message_cache]) if reply_style else Message(message_cache)
+                                await asyncio.sleep(random.uniform(0.1,0.2) + response_penalty_time)
+                                await reply_chat.send(message)
+                                response_penalty_time = response_penalty_time * 2 if response_penalty_time < max_penalty_time / 2 else max_penalty_time
+                            else:
+                                await reply_chat.finish(f'对话中包含不当内容。请重新开始（类型：{moderation_result["Label"]}，来源：{moderation_result["Source"]}）。')
+                        if '</think>' in message_cache:
                             response_reached_answer = True
                         message_cache = ''
                 else:
@@ -255,7 +258,10 @@ async def handle(bot: Bot, event: MessageEvent, arg: Message = CommandArg()):
         # Show current configuration
         await chat_config.finish('当前配置：\n' + f'对话平台：{platform}\n对话模型：{openai_model}\n对话次数：{max_replies}\n回车惩罚时间：{base_penalty_time}\n最大回车惩罚时间：{max_penalty_time}\n对话指示：{chat_indicator_base}\n剩余次数样式：{remaining_style}\n使用反射：{use_reflection}\n最大参与对话数：{max_streams}\n参与对话概率：{engage_percentage}')
     elif args[0] in ['platform', 'p']:
-        platform = 'openai' if platform == 'deepseek' else 'deepseek'
+        if len(args) < 2:
+            platform = 'openai' if platform == 'deepseek' else 'deepseek'
+        else:
+            platform = args[1]
         await chat_config.finish(f'对话平台已设置为{platform}。')
     elif args[0] in ['model', 'm']:
         openai_model = args[1]
@@ -350,29 +356,33 @@ async def handle(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(
         past_messages, count = await get_history(event.group_id, safe_int_conversion(arg, 20), bot, ignore_self=False)
         past_messages.replace(bot_nickname, 'DoodleGPT')
         initial_prompt = f"Below are some messages before you joined the group:\n{past_messages}\n(You can cue some of them.)"
-    streaming_groups[str(event.group_id)] = {'remaining': max_streams, 'history': [{"role": "system", "content": system_prompt_text + f'You have now joined a group chat called "{group_name}". Chat actively in Chinese and mention people\'s names if you\'re replying to them.'}, {"role": "user", "content": f"{initial_prompt}\nNow greet your group members."}], 'reply_style': False}
+    streaming_groups[str(event.group_id)] = {'remaining': max_streams, 'history': [{"role": "system", "content": system_prompt_text + f'你现在在群"{group_name}"里聊天。每次只回应一个话题，保持消息在三行以内！用换行分割每句话，没有值得回复的话题时主动抛梗聊天。记住：唠嗑要像真人那样分多次参与讨论，严禁合并回复多个用户/话题！'}, {"role": "user", "content": f"{initial_prompt}\nNow greet your group members."}], 'reply_style': False}
     await join.send(f'DoodleGPT 已查看之前的{count}条文字消息并加入到本群。')
-    response = continue_chat(stream=True, platform=platform, history=streaming_groups[str(event.group_id)]['history'])
+    response = await continue_chat(stream=True, platform=platform, history=streaming_groups[str(event.group_id)]['history'])
     collected_reponse = ''
     message_cache = ''
     response_penalty_time = base_penalty_time
     response_reached_answer = False
     response_use_reflection = False
     try:
-        for chunk in response:
+        async for chunk in response:
             if chunk.choices[0].finish_reason is None:
-                message_cache += chunk.choices[0].delta.content
+                message_cache += chunk.choices[0].delta.content or ''
                 if '\n' in message_cache:
                     collected_reponse += message_cache
                     message_cache = message_cache.replace('\n', '').strip()
-                    if '<analyse>' in message_cache:
+                    if '<think>' in message_cache:
                         response_use_reflection = True
                     if message_cache != '' and (response_reached_answer or (response_use_reflection is False)):
-                        message = Message(message_cache)
-                        await asyncio.sleep(random.uniform(0.1,0.2) + response_penalty_time)
-                        await bot.send_group_msg(group_id=event.group_id, message=message)
-                        response_penalty_time = response_penalty_time * 2 if response_penalty_time < max_penalty_time / 2 else max_penalty_time
-                    if '<answer>' in message_cache:
+                        moderation_result = text_moderation(message_cache, message_id=f'{event.group_id}_{event.message_id}')
+                        if moderation_result['Suggestion'] != 'Block':
+                            message = Message(message_cache)
+                            await asyncio.sleep(random.uniform(0.1,0.2) + response_penalty_time)
+                            await bot.send_group_msg(group_id=event.group_id, message=message)
+                            response_penalty_time = response_penalty_time * 2 if response_penalty_time < max_penalty_time / 2 else max_penalty_time
+                        else:
+                            await join.finish(f'对话中包含不当内容。请重新开始（类型：{moderation_result["Label"]}，来源：{moderation_result["Source"]}）。')
+                    if '</think>' in message_cache:
                         response_reached_answer = True
                     message_cache = ''
             else:
@@ -405,33 +415,31 @@ async def handle(bot: Bot, event: GroupMessageEvent):
     if doodlegpt_enabled is False:
         return
     remaining, history, reply_style = streaming_groups[str(event.group_id)]['remaining'], streaming_groups[str(event.group_id)]['history'], streaming_groups[str(event.group_id)]['reply_style']
-    remaining -= 1
-    streaming_groups[str(event.group_id)]['remaining'] = remaining
     history[-1]['content'] += f'\n{event.sender.nickname}: {event.get_plaintext()}' if remaining > 0 else f'\n{event.sender.nickname}: {event.get_plaintext()}\n(You are now sending your last message before you leave the group chat. Say goodbye to members engaged in the chat at the end of your message.)'
     if (random.random() >= engage_percentage) and remaining != 0 and not event.is_tome():
         return
     else:
-        response = continue_chat(stream=True, platform=platform, history=history)
+        response = await continue_chat(stream=True, platform=platform, history=history)
         collected_reponse = ''
         message_cache = ''
         response_penalty_time = base_penalty_time
         response_reached_answer = False
         response_use_reflection = False
         try:
-            for chunk in response:
+            async for chunk in response:
                 if chunk.choices[0].finish_reason is None:
-                    message_cache += chunk.choices[0].delta.content
+                    message_cache += chunk.choices[0].delta.content or ''
                     if '\n' in message_cache:
                         collected_reponse += message_cache
                         message_cache = message_cache.replace('\n', '').strip()
-                        if '<analyse>' in message_cache:
+                        if '<think>' in message_cache:
                             response_use_reflection = True
                         if message_cache != '' and (response_reached_answer or (response_use_reflection is False)):
                             message = Message([MessageSegment.reply(event.message_id), message_cache]) if reply_style else Message(message_cache)
                             await asyncio.sleep(random.uniform(0.1,0.2) + response_penalty_time)
                             await bot.send_group_msg(group_id=event.group_id, message=message)
                             response_penalty_time = response_penalty_time * 2 if response_penalty_time < max_penalty_time / 2 else max_penalty_time
-                        if '<answer>' in message_cache:
+                        if '</think>' in message_cache:
                             response_reached_answer = True
                         message_cache = ''
                 else:
@@ -443,6 +451,7 @@ async def handle(bot: Bot, event: GroupMessageEvent):
                 history.append({'role': 'assistant', 'content': collected_reponse})
                 history.append({'role': 'user', 'content': ''})
                 print(remaining)
+                remaining -= 1
                 streaming_groups[str(event.group_id)] = {'remaining': remaining, 'history': history, 'reply_style': reply_style}
             else:
                 streaming_groups.pop(str(event.group_id))

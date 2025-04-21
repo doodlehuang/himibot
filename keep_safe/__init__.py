@@ -4,7 +4,8 @@ from nonebot.rule import to_me
 from nonebot.permission import SUPERUSER
 from nonebot.adapters.onebot.v11 import Bot, GroupBanNoticeEvent as BanEvent
 import asyncio
-import yaml
+import os
+import yaml, time, base64, json
 from .config import Config
 
 __plugin_meta__ = PluginMetadata(
@@ -13,11 +14,31 @@ __plugin_meta__ = PluginMetadata(
     usage="",
     config=Config,
 )
-
+tencentcloud_imported = False
+# import tencentcloud only if it's installed
+try:
+    from tencentcloud.common import credential
+    from tencentcloud.common.profile.client_profile import ClientProfile
+    from tencentcloud.common.profile.http_profile import HttpProfile
+    from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
+    from tencentcloud.tms.v20201229 import tms_client, models
+    tencentcloud_imported = True
+except ImportError:
+    tencentcloud_imported = False
 config = get_plugin_config(Config)
 banned_from = dict()
 with open('himibot/config.yml', 'r', encoding='utf-8') as f:
-    superuser_id = yaml.safe_load(f)['superuser_id']
+    config_dict = yaml.safe_load(f)
+    superuser_id = config_dict['superuser_id']
+    tencent_cloud_secret_id = config_dict['tencent_cloud_secret_id'] if 'tencent_cloud_secret_id' in config_dict else None
+    tencent_cloud_secret_key = config_dict['tencent_cloud_secret_key'] if 'tencent_cloud_secret_key' in config_dict else None
+
+if os.path.exists('himibot/sensitive_words.txt'):
+    with open('himibot/sensitive_words.txt', 'r', encoding='utf-8') as f:
+        sensitive_words = f.read().splitlines()
+else:
+    sensitive_words = []
+
 def load_banned_from():
     global banned_from
     with open('banned_from.yaml', 'r', encoding='utf-8') as f:
@@ -63,6 +84,37 @@ async def handle(bot: Bot, event):
 
 def is_banned(group_id: str | int = None):
     return str(group_id) in banned_from
+
+def text_moderation(text: str, message_id: str | int = 'test'):
+    if not tencentcloud_imported:
+        print('Local moderation activated.')
+        for word in sensitive_words:
+            if word in text:
+                return {'Suggestion': 'Block', 'Label': 'Sensitive words', 'Score': 100, 'Source': 'Local'}
+        return {'Suggestion': 'Pass', 'Label': '', 'Score': 0, 'Source': 'Local'}
+    try:
+        print('Tencent moderation activated.')
+        cred = credential.Credential(tencent_cloud_secret_id, tencent_cloud_secret_key)
+        httpProfile = HttpProfile()
+        httpProfile.endpoint = "tms.tencentcloudapi.com"
+        clientProfile = ClientProfile()
+        clientProfile.httpProfile = httpProfile
+        req = models.TextModerationRequest()
+        client = tms_client.TmsClient(cred, "ap-guangzhou", clientProfile)
+        params = {
+        "Content": base64.b64encode(text.encode('utf-8')).decode('utf-8'),
+        "BizType": "chat_moderation",
+        "DataId": f'{message_id}_{time.time()}'
+    }
+        req.from_json_string(json.dumps(params))
+        resp = client.TextModeration(req)
+        return {'Suggestion': resp.Suggestion, 'Label': resp.Label, 'Score': resp.Score, 'Source': 'Tencent'}
+    except TencentCloudSDKException as err:
+        print(f'Tencent moderation failed ({err}). Activating local moderation.')
+        for word in sensitive_words:
+            if word in text:
+                return {'Suggestion': 'Block', 'Label': 'Sensitive words', 'Score': 100, 'Source': 'Local'}
+        return {'Suggestion': 'Pass', 'Label': '', 'Score': 0, 'Source': 'Local'}
 
 @list_ban_status.handle()
 async def handle(bot: Bot, event):

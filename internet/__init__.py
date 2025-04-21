@@ -3,7 +3,7 @@ from nonebot.plugin import PluginMetadata
 from nonebot.params import CommandArg
 from nonebot.adapters import Bot, Message, Event
 from himibot.plugins.keep_safe import is_banned
-import importlib, requests, datetime, yaml, json, pycountry, gettext
+import importlib, datetime, yaml, json, pycountry, gettext, aiohttp, asyncio
 from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
 from .config import Config
@@ -26,28 +26,33 @@ no_proxies =  {'http': '', 'https': ''}
 
 country_names = gettext.translation('iso3166-1', pycountry.LOCALES_DIR, languages=['zh_CN'])
 
-def http_test(url = 'http://cp.cloudflare.com', proxies = no_proxies):
+async def http_test(url = 'http://cp.cloudflare.com', proxies = no_proxies):
     try:
-        http_response = requests.head(url, proxies = proxies, timeout = 2)
-        return http_response.status_code
-    except requests.exceptions.RequestException:
+        async with aiohttp.ClientSession() as session:
+            async with session.head(url, proxy=proxies.get('http') if proxies.get('http') else None, timeout=2) as response:
+                return response.status
+    except (aiohttp.ClientError, asyncio.TimeoutError):
         return False
     
-def blocked_without_proxy(url = 'https://www.v2ex.com/generate_204'):
+async def blocked_without_proxy(url = 'https://www.v2ex.com/generate_204'):
     try:
-        requests.head(url, proxies = no_proxies, timeout = 2)
-        return False
-    except requests.exceptions.RequestException:
+        async with aiohttp.ClientSession() as session:
+            async with session.head(url, timeout=2) as response:
+                return False
+    except (aiohttp.ClientError, asyncio.TimeoutError):
         try:
-            requests.head(url, proxies = proxies, timeout = 2)
-            return True
-        except requests.exceptions.RequestException:
+            async with aiohttp.ClientSession() as session:
+                async with session.head(url, proxy=proxies.get('http'), timeout=2) as response:
+                    return True
+        except (aiohttp.ClientError, asyncio.TimeoutError):
             return 'Error'
         
-def extract_prefdomain_url(proxies = no_proxies):
+async def extract_prefdomain_url(proxies = no_proxies):
     try:
-        content = requests.get('https://www.google.com', proxies=proxies, timeout=2).text
-    except requests.RequestException:
+        async with aiohttp.ClientSession() as session:
+            async with session.get('https://www.google.com', proxy=proxies.get('http') if proxies.get('http') else None, timeout=2) as response:
+                content = await response.text()
+    except (aiohttp.ClientError, asyncio.TimeoutError):
         return None
     soup = BeautifulSoup(content, 'html.parser')
     
@@ -67,42 +72,50 @@ def extract_prefdomain_url(proxies = no_proxies):
     else:
         return None
 
-def raw_githubusercontent_speed_test(proxy_first = False):
+async def raw_githubusercontent_speed_test(proxy_first = False):
     try:
         if not proxy_first:
             start = datetime.datetime.now()
-            requests.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxies=no_proxies, timeout=1)
-            end = datetime.datetime.now()
-            time_without_proxy = end - start
-            return time_without_proxy.total_seconds(), 'direct'
+            async with aiohttp.ClientSession() as session:
+                async with session.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', timeout=1) as response:
+                    end = datetime.datetime.now()
+                    time_without_proxy = end - start
+                    return time_without_proxy.total_seconds(), 'direct'
         else:
             start = datetime.datetime.now()
-            requests.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxies=proxies, timeout=1)
-            end = datetime.datetime.now()
-            time_with_proxy = end - start
-            return time_with_proxy.total_seconds(), 'proxy'
-    except requests.RequestException:
+            async with aiohttp.ClientSession() as session:
+                async with session.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxy=proxies.get('http'), timeout=1) as response:
+                    end = datetime.datetime.now()
+                    time_with_proxy = end - start
+                    return time_with_proxy.total_seconds(), 'proxy'
+    except (aiohttp.ClientError, asyncio.TimeoutError):
         try:
             if not proxy_first:
                 start = datetime.datetime.now()
-                requests.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxies=proxies, timeout=2)
-                end = datetime.datetime.now()
-                time_with_proxy = end - start
-                return time_with_proxy.total_seconds(), 'proxy'
+                async with aiohttp.ClientSession() as session:
+                    async with session.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxy=proxies.get('http'), timeout=2) as response:
+                        end = datetime.datetime.now()
+                        time_with_proxy = end - start
+                        return time_with_proxy.total_seconds(), 'proxy'
             else:
                 start = datetime.datetime.now()
-                requests.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', proxies=no_proxies, timeout=2)
-                end = datetime.datetime.now()
-                time_without_proxy = end - start
-                return time_without_proxy.total_seconds(), 'direct'
-        except requests.RequestException:
+                async with aiohttp.ClientSession() as session:
+                    async with session.head('https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt', timeout=2) as response:
+                        end = datetime.datetime.now()
+                        time_without_proxy = end - start
+                        return time_without_proxy.total_seconds(), 'direct'
+        except (aiohttp.ClientError, asyncio.TimeoutError):
             return False, False
         
-def get_ip_info(ip = '', use_proxy = True):
+async def get_ip_info(ip = '', use_proxy = True):
     try:
-        ip_info = requests.get(f'http://ip-api.com/json/{ip}', proxies=proxies if use_proxy else no_proxies, timeout=2).json()
-        return ip_info
-    except requests.RequestException:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f'http://ip-api.com/json/{ip}', 
+                                 proxy=proxies.get('http') if use_proxy else None, 
+                                 timeout=2) as response:
+                ip_info = await response.json()
+                return ip_info
+    except (aiohttp.ClientError, asyncio.TimeoutError):
         return False
 
 def domain_info(domain):
@@ -142,38 +155,45 @@ def domain_info(domain):
     except whois.parser.PywhoisError:
         return None
 
-def show_headers(url):
+async def show_headers(url):
     try:
-        response = requests.head(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'}, allow_redirects=True, timeout=5)
-    except requests.exceptions.Timeout:
+        async with aiohttp.ClientSession() as session:
+            async with session.head(url, 
+                                  headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'}, 
+                                  allow_redirects=True, 
+                                  timeout=5) as response:
+                headers = response.headers
+                drop = ['Set-Cookie']
+                for key in drop:
+                    headers.pop(key, None)
+
+                result = f'HTTP/{response.version.major}.{response.version.minor} {response.status} {response.reason}'
+                for key, value in headers.items():
+                    result += f'\n{key}: {value}'
+
+                return result
+    except asyncio.TimeoutError:
         return 'curl: (28) Operation timeout. The specified time-out period was reached.'
-    except requests.exceptions.TooManyRedirects:
+    except aiohttp.TooManyRedirects:
         return 'curl: (47) Too many redirects.'
-    except requests.exceptions.ConnectionError as e:
+    except aiohttp.ClientConnectorError as e:
         if 'Name or service not known' in str(e):
             return 'curl: (6) Could not resolve host.'
         elif 'Connection refused' in str(e):
             return 'curl: (7) Failed to connect to host or proxy.'
         else:
             return f'curl: (7) {e}'
-    except requests.exceptions.RequestException as e:
+    except aiohttp.ClientError as e:
         return f'curl: (56) Network error occurred: {e}'
-    
-    headers = response.headers
-    drop = ['Set-Cookie']
-    for key in drop:
-        headers.pop(key, None)
 
-    result = f'{response.raw.version_string} {response.status_code} {response.reason}'
-    for key, value in headers.items():
-        result += f'\n{key}: {value}'
-
-    return result
-
-def get_academic_institute():
+async def get_academic_institute():
     try:
-        response = requests.get('https://login.cnki.net/TopLogin/api/loginapi/IpLoginFlush', headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'}, timeout=2)
-        result = json.loads(response.text[1:-1])
+        async with aiohttp.ClientSession() as session:
+            async with session.get('https://login.cnki.net/TopLogin/api/loginapi/IpLoginFlush', 
+                                 headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'}, 
+                                 timeout=2) as response:
+                text = await response.text()
+                result = json.loads(text[1:-1])
     except Exception:
         return False
     else:
@@ -197,34 +217,34 @@ async def handle(bot: Bot, event: Event, args: Message = CommandArg()):
             return
     if len(args) == 0:
         output = '成功的测试：'
-        http_result = http_test()
-        https_result = http_test('https://www.gstatic.com/generate_204')
+        http_result = await http_test()
+        https_result = await http_test('https://www.gstatic.com/generate_204')
         output += 'HTTP + HTTPS\n' if http_result and https_result else 'HTTP\n' if http_result else 'HTTPS\n' if https_result else '无\n'
         output += '网络：'
-        output += '受限' if blocked_without_proxy() else '自由'
-        local_region, remote_region = get_ip_info(use_proxy=False), get_ip_info()
+        output += '受限' if await blocked_without_proxy() else '自由'
+        local_region, remote_region = await get_ip_info(use_proxy=False), await get_ip_info()
         output += f'（{GoogleTranslator(source='en', target='zh-CN', proxies=proxies).translate(f'{local_region["regionName"]}, {local_region["country"]} ').replace('中国', '') if local_region else '不可用'}'
         output += f'/{GoogleTranslator(source='en', target='zh-CN', proxies=proxies).translate(f'{remote_region["regionName"]}, {remote_region["country"]} ').replace('中国', '') if remote_region else '不可用'}）\n'
         output += 'Google 访问状况：'
-        google_result = blocked_without_proxy('https://www.google.com/generate_204')
+        google_result = await blocked_without_proxy('https://www.google.com/generate_204')
         if google_result == 'Error':
             output += '失败'
         elif not google_result:
             output += f'直接'
-            region = extract_prefdomain_url()
+            region = await extract_prefdomain_url()
             output += f'（{region}）' if region else ''
         else:
             output += f'间接'
-            region = extract_prefdomain_url(proxies)
+            region = await extract_prefdomain_url(proxies)
             output += f'（{region}）' if region else ''
         output += '\nRaw GitHub User Content 访问测速：'
-        speed, method = raw_githubusercontent_speed_test()
+        speed, method = await raw_githubusercontent_speed_test()
         if speed and method:
             output += '直接' if method == 'direct' else '间接'
             output += f'连接用时{speed*1000:.2f}ms'
         else:
             output += '失败'
-        institude = get_academic_institute()
+        institude = await get_academic_institute()
         if institude:
             output += f'\n学术机构：{institude}'
         await test.finish(output)
@@ -233,15 +253,15 @@ async def handle(bot: Bot, event: Event, args: Message = CommandArg()):
         if not url.startswith('http'):
             url = 'https://' + url
         output = f'URL 测试：\n'
-        if blocked_without_proxy(url) == 'Error':
+        if await blocked_without_proxy(url) == 'Error':
             output += '失败\n'
-        elif blocked_without_proxy(url):
+        elif await blocked_without_proxy(url):
             output += 'BIC: Yes\n'
-            http_result = http_test(url, proxies)
+            http_result = await http_test(url, proxies)
             output += f'成功，状态码为{http_result}' if http_result else '失败'
         else:
             output += 'BIC: No\n'
-            http_result = http_test(url)
+            http_result = await http_test(url)
             output += f'成功，状态码为{http_result}' if http_result else '失败'
         await test.finish(output)
 
@@ -252,13 +272,13 @@ async def handle(bot: Bot, event: Event, args: Message = CommandArg()):
             return
     ip = args.extract_plain_text()
     if ip == 'host':
-        ip_info = get_ip_info(use_proxy=False)
+        ip_info = await get_ip_info(use_proxy=False)
     elif ip == 'help':
         await ipinfo.finish(':ip host：获取本地 IP 信息\n:ip (IP 地址)：获取 IP 信息')
     elif ip:
-        ip_info = get_ip_info(ip)
+        ip_info = await get_ip_info(ip)
     else:
-        ip_info = get_ip_info()
+        ip_info = await get_ip_info()
     if ip_info:
         if ip_info.get('message') == 'private range':
             await ipinfo.finish('私有 IP 地址是要问个啥。')
@@ -295,7 +315,7 @@ async def handle(bot: Bot, event: Event, args: Message = CommandArg()):
     url = args.extract_plain_text()
     if url:
         url = url if url.startswith('http') else 'http://' + url
-        output = show_headers(url)
+        output = await show_headers(url)
         await show_headers_cmd.finish(output)
     else:
         await show_headers_cmd.finish('请输入 URL')
@@ -305,14 +325,14 @@ async def handle(bot: Bot, event: Event, args: Message = CommandArg()):
     if event.message_type == 'group':
         if is_banned(event.group_id):
             return
-    google_access_status = blocked_without_proxy('https://www.google.com/generate_204')
+    google_access_status = await blocked_without_proxy('https://www.google.com/generate_204')
     if google_access_status == 'Error':
         await google_region.finish('无法连接到 Google。')
     elif not google_access_status:
         direct = True
     else:
         direct = False
-    region = extract_prefdomain_url(proxies) if not direct else extract_prefdomain_url()
+    region = await extract_prefdomain_url(proxies) if not direct else await extract_prefdomain_url()
     if region:
         await google_region.finish(f'可以{"直接" if direct else "间接"}访问 Google，地区为 {region}。')
     else:
@@ -323,7 +343,7 @@ async def handle(bot: Bot, event: Event):
     if event.message_type == 'group':
         if is_banned(event.group_id):
             return
-    institude = get_academic_institute()
+    institude = await get_academic_institute()
     if institude:
         await academic_institute.finish(f'我现在正使用{institude}的网络。')
     else:

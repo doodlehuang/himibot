@@ -7,7 +7,7 @@ from nonebot.adapters.telegram.event import MessageEvent as TEvent
 from himibot.plugins.keep_safe import is_banned
 from nonebot.adapters.discord import MessageSegment
 from nonebot.adapters.discord.commands import on_slash_command
-from httpx import get, HTTPError
+import aiohttp
 import yaml
 from .config import Config
 
@@ -26,13 +26,13 @@ ss_ana_discord = on_slash_command(name="ss-ana", description='获取一条林槐
 ss_ana_telegram = on_startswith('/ss-ana', rule=is_type(TEvent))
 ss_ana = on_command("ss-ana", priority=5, aliases={'lhyl', '林槐语录', 'ss'}, block=True)
 
-def get_ss_ana():
+async def get_ss_ana():
     try:
-        r = get(ss_ana_endpoint)
-        r.raise_for_status()
-        r = r.json()
-        return(r['text'] + '\n（' + r['time'].split('/')[0] + '年' + str(int(r['time'].split('/')[1])) + '月）')
-    except HTTPError as e:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(ss_ana_endpoint) as response:
+                r = await response.json()
+                return(r['text'] + '\n（' + r['time'].split('/')[0] + '年' + str(int(r['time'].split('/')[1])) + '月）')
+    except aiohttp.ClientError as e:
         return('获取失败：' + str(e))
     
 @ss_ana_discord.handle()

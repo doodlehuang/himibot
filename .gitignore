@@ -6,3 +6,5 @@ proprietary/
 *.ps1
 test.py
 dhw_passport_utils/
+.DS_Store
+__MACOSX

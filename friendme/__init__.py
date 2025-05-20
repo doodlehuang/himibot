@@ -83,13 +83,13 @@ async def handle_friend_request(bot: Bot, event: RequestEvent):
         user_id = event.user_id
         if user_id in friend_requests:
             del friend_requests[user_id]
-            await bot.set_friend_add_request(flag=event.flag, approve=True)
+            await event.approve(bot)
             await asyncio.sleep(3)
             await bot.send_private_msg(user_id=user_id, message='你好！')
         else:
-            await bot.set_friend_add_request(flag=event.flag, approve=False)
+            await event.reject(bot)
     elif event.request_type == 'group' and event.sub_type == 'invite':
-        group_id = event.group_id
+        group_id = str(event.group_id)
         if group_id in group_requests:
             del group_requests[group_id]
-            await bot.set_group_add_request(flag=event.flag, sub_type=event.sub_type, approve=True)
+            await event.approve(bot)

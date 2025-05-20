@@ -9,10 +9,12 @@ __plugin_meta__ = PluginMetadata(
     config=Config,
 )
 
+userdata_db_path = 'himibot/userdata.db'
+groupdata_db_path = 'himibot/groupdata.db'
 config = get_plugin_config(Config)
 registered_users = {}
 def database_user_init():
-    database = sqlite3.connect('userdata.db')
+    database = sqlite3.connect(userdata_db_path)
     cursor = database.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS userdata
         (userid TEXT PRIMARY KEY NOT NULL,
@@ -27,7 +29,7 @@ def database_user_init():
     cursor.close()
     database.close()
 def database_group_init():
-    database = sqlite3.connect('groupdata.db')
+    database = sqlite3.connect(groupdata_db_path)
     cursor = database.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS groupdata
         (groupid TEXT PRIMARY KEY NOT NULL,
@@ -40,7 +42,7 @@ def database_group_init():
     database.close()
 
 database_user_init()
-user_database = sqlite3.connect('userdata.db')
+user_database = sqlite3.connect(userdata_db_path)
 user_cursor = user_database.cursor()
 
 def auto_user_data(user_id: str):

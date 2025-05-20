@@ -38,7 +38,7 @@ get_history_message = summary.command(tuple(), aliases={'summarize', '总结', '
 cooldown_list = summary.command('cd', permission=SUPERUSER)
 cooldown_clear = summary.command('cdc', permission=SUPERUSER)
 supersummary = summary.command('super', permission=SUPERUSER, aliases={'sumper'})
-help = summary.command('help', aliases={'帮助', 'help'})
+help = summary.command('help', aliases={'sum help'})
 cooldown_minutes = 3
 
 def safe_int_conversion(value, default=20):

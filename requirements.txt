@@ -16,5 +16,6 @@ playwright
 dnspython
 glotio-api
 pycountry
-tencentcloud-sdk-python
 aiohttp
+pypinyin
+thefuzz

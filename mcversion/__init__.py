@@ -47,12 +47,9 @@ async def send_group_message(version, release_time, type, group_id):
         bot = get_bot(str(bot_self_id))
     except Exception as e:
         bot = None
-    if bot: 
-        message = f'Minecraft {version} {'快照' if type == "snapshot" else "正式版"}于 {release_time.strftime("%Y-%m-%d %a %H:%M:%S")} UTC 发布'
-        tasks = [bot.send_group_msg(group_id=group_id, message=message) for group_id in mcversion_groups_list]
-        if tasks:
-            await asyncio.gather(*tasks)
-
+    if bot:
+        message = f'Minecraft {version} {"快照" if type == "snapshot" else "正式版"}于 {release_time.strftime("%Y-%m-%d %a %H:%M:%S")} UTC 发布'
+        await bot.send_group_msg(group_id=group_id, message=message)
 old_data = None
 @scheduler.scheduled_job("interval", minutes=5, id="check-minecraft-version")
 async def check_minecraft_version():
@@ -69,6 +66,8 @@ async def check_minecraft_version():
         old_data = data
     for version in changed_versions:
         await send_ntfy_message(version.version, version.release_time, version.type)
+        tasks = [send_group_message(version.version, version.release_time, version.type, group_id) for group_id in mcversion_groups_list]
+        await asyncio.gather(*tasks)
 
 mcv_group = CommandGroup('mcv')
 

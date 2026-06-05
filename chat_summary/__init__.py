@@ -32,6 +32,7 @@ start_history = [{"role": "system", "content": 'You are an AI assistant tasked w
 openai_model = 'deepseek/deepseek-v3/community'
 deepseek_model = 'deepseek-chat'
 user_cooldown_list = {'example_user_id': 10}
+ignore_self = False
 
 summary = CommandGroup('summary')
 get_history_message = summary.command(tuple(), aliases={'summarize', '总结', 'sum'})
@@ -128,7 +129,7 @@ async def handle(bot: Bot, event: MessageEvent, args = CommandArg()):
     group_name = (await bot.get_group_info(group_id=group_id))['group_name']
     arg = int(args[1])
     fetch_message_count = safe_int_conversion(args[1], 100) + 1
-    messages, valid_message_counter = await get_history(group_id, fetch_message_count, bot)
+    messages, valid_message_counter = await get_history(group_id, fetch_message_count, bot, ignore_self = ignore_self)
     history = start_history.copy()
     history.append({"role": "user", "content": messages})
     try: 

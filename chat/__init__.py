@@ -33,7 +33,7 @@ with open('himibot/config.yml', 'r', encoding='utf-8') as f:
 
 openai_client = openai.AsyncOpenAI(api_key=openai_key, base_url=openai_endpoint)
 deepseek_client = openai.AsyncOpenAI(api_key=deepseek_key, base_url=deepseek_endpoint)
-doodlegpt_enabled = True
+doodlegpt_enabled = False
 platform = 'DeepSeek'
 openai_model = 'deepseek/deepseek-v3/community'
 deepseek_model = 'deepseek-chat'
